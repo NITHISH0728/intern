@@ -42,6 +42,7 @@ from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
 from starlette.requests import Request
 from celery.result import AsyncResult
+from database import engine, get_db, redis_client
 # 🟢 GOOGLE DRIVE IMPORTS
 from google.auth.transport.requests import Request as GoogleRequest  # 👈 Rename this
 from fastapi import Request  # 👈 Add this explicitly for FastAPI
@@ -922,15 +923,16 @@ async def verify_assignment(submission_id: int, db: AsyncSession = Depends(get_d
 
 @app.post("/api/v1/execute")
 async def execute_code(payload: CodePayload):
-    # We just send the data to the worker. The worker handles Judge0.
+    # Send to local worker
     task = celery_app.send_task(
         "worker.run_code_task", 
         args=[payload.source_code, payload.language_id, payload.stdin]
     )
     
-    return {"task_id": task.id, "message": "Sent to Judge0..."}
+    # We return the task ID so frontend can poll /api/v1/result/{task_id}
+    return {"task_id": task.id, "message": "Execution queued"}
     
-    return {"task_id": task.id, "message": "Processing started"}
+   
 
 # 2. STATUS CHECK ENDPOINT
 @app.get("/api/v1/result/{task_id}")
@@ -946,8 +948,42 @@ async def get_result(task_id: str):
  
 @app.get("/api/v1/courses/{course_id}/challenges")
 async def get_course_challenges(course_id: int, db: AsyncSession = Depends(get_db)):
+    # 1. define Key
+    cache_key = f"course_{course_id}_challenges"
+
+    # 2. Check Redis (Fast Path)
+    try:
+        cached_data = await redis_client.get(cache_key)
+        if cached_data:
+            print("⚡ Serving Challenges from Redis Cache")
+            return json.loads(cached_data)
+    except Exception as e:
+        print(f"Redis Error (Ignored): {e}")
+
+    # 3. DB Query (Slow Path)
     result = await db.execute(select(models.CourseChallenge).where(models.CourseChallenge.course_id == course_id))
-    return result.scalars().all()
+    challenges = result.scalars().all()
+    
+    # 4. Serialize Data (Convert SQLAlchemy Objects to Dicts for JSON)
+    challenges_data = []
+    for c in challenges:
+        challenges_data.append({
+            "id": c.id,
+            "title": c.title,
+            "description": c.description,
+            "difficulty": c.difficulty,
+            "test_cases": c.test_cases, # Assuming this is JSON string or Dict
+            "course_id": c.course_id
+        })
+
+    # 5. Save to Redis (Expire in 1 hour)
+    try:
+        await redis_client.setex(cache_key, 3600, json.dumps(challenges_data))
+    except Exception as e:
+        print(f"Failed to cache data: {e}")
+
+    print("🐢 Serving Challenges from Database")
+    return challenges_data
 
 # 3️⃣ ADD CREATE CHALLENGE
 @app.post("/api/v1/courses/{course_id}/challenges")
@@ -961,6 +997,9 @@ async def create_course_challenge(course_id: int, challenge: ChallengeCreate, db
     )
     db.add(new_challenge)
     await db.commit()
+    cache_key = f"course_{course_id}_challenges"
+    await redis_client.delete(cache_key)
+    print(f"🗑️ Cache cleared for {cache_key}")
     return {"message": "Challenge added"}
 
 @app.post("/api/v1/login-otp")

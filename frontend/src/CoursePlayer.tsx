@@ -37,9 +37,31 @@ const ToastNotification = ({ toast, setToast }: any) => {
   );
 };
 
+// --- 🔄 POLLING HELPER FUNCTION ---
+const pollResult = async (taskId: string) => {
+    const maxRetries = 20; // Wait max 20 seconds
+    let attempts = 0;
+
+    while (attempts < maxRetries) {
+        try {
+            const res = await axios.get(`http://127.0.0.1:8000/api/v1/result/${taskId}`);
+            if (res.data.status === "completed") {
+                return res.data.data; // This contains { status: "success", output: "..." }
+            }
+            if (res.data.status === "failed") {
+                return { status: "error", output: res.data.error || "Execution failed" };
+            }
+        } catch (e) {
+            console.error("Polling error", e);
+        }
+        attempts++;
+        await new Promise(resolve => setTimeout(resolve, 1000)); // Wait 1 second
+    }
+    return { status: "error", output: "Timeout: Server took too long to respond." };
+};
+
 // --- 💻 COMPONENT: PROFESSIONAL CODE ARENA ---
 const CodeCompiler = ({ lesson }: { lesson: any }) => {
-  // ✅ Toast State
   const [toast, setToast] = useState({ show: false, message: "", type: "success" });
   const triggerToast = (message: string, type: "success" | "error" = "success") => {
     setToast({ show: true, message, type });
@@ -77,18 +99,25 @@ const CodeCompiler = ({ lesson }: { lesson: any }) => {
 
   const runCode = async () => {
     setLoading(true);
-    setOutput("Compiling & Executing...");
+    setOutput("Compiling & Executing (Queued)...");
     try {
+        // 1. Submit Job
         const res = await axios.post("http://127.0.0.1:8000/api/v1/execute", {
             source_code: code,
             language_id: language, 
             stdin: activeProblem.testCases?.[0]?.input || "" 
         });
 
-        if (res.data.stdout) setOutput(res.data.stdout);
-        else if (res.data.stderr) setOutput(`Error:\n${res.data.stderr}`);
-        else if (res.data.compile_output) setOutput(`Compile Error:\n${res.data.compile_output}`);
+        const taskId = res.data.task_id;
+        setOutput("Processing in Background...");
+
+        // 2. Poll for Result
+        const result = await pollResult(taskId);
+
+        // 3. Display Output (Using 'output' key from worker.py)
+        if (result.output) setOutput(result.output);
         else setOutput("Execution finished with no output.");
+
     } catch (err) {
         console.error(err);
         setOutput("❌ Execution Failed. Check backend connection.");
@@ -98,7 +127,7 @@ const CodeCompiler = ({ lesson }: { lesson: any }) => {
   };
 
   const saveProgress = () => {
-      triggerToast("Code Saved Successfully!", "success"); // ✅ Replaced Alert
+      triggerToast("Code Saved Successfully!", "success");
   };
 
   if (!problems.length) return (
@@ -109,11 +138,10 @@ const CodeCompiler = ({ lesson }: { lesson: any }) => {
 
   return (
     <div className="flex h-full p-4 gap-4 bg-slate-100 font-sans relative">
-        <ToastNotification toast={toast} setToast={setToast} /> {/* ✅ Toast Rendered */}
+        <ToastNotification toast={toast} setToast={setToast} />
         
         <div className="w-[40%] flex flex-col gap-4">
             <div className="flex-1 bg-white rounded-xl shadow-sm border border-slate-200 p-6 overflow-y-auto">
-                {/* 🔹 PROBLEM TABS */}
                 <div className="flex gap-2 mb-6 border-b border-slate-100 pb-2 overflow-x-auto">
                     {problems.map((_: any, idx: number) => (
                         <button 
@@ -187,7 +215,6 @@ const CodingPlayer = ({ course, token }: { course: any, token: string }) => {
     const [loading, setLoading] = useState(false);
     const [verdict, setVerdict] = useState<string | null>(null);
 
-    // ✅ Toast State
     const [toast, setToast] = useState({ show: false, message: "", type: "success" });
     const triggerToast = (message: string, type: "success" | "error" = "success") => {
         setToast({ show: true, message, type });
@@ -222,7 +249,7 @@ const CodingPlayer = ({ course, token }: { course: any, token: string }) => {
 
     const runAndSubmit = async () => {
         setLoading(true);
-        setOutput("Compiling & Executing Tests...");
+        setOutput("Initializing Test Environment...");
         setVerdict(null);
 
         try {
@@ -238,21 +265,22 @@ const CodingPlayer = ({ course, token }: { course: any, token: string }) => {
 
             for (let i = 0; i < cases.length; i++) {
                 const tc = cases[i];
-                // Execute each test case via Judge0
+                
+                // 1. Submit Job
+                setOutput(`Running Test Case ${i + 1}/${cases.length}...`);
                 const res = await axios.post("http://127.0.0.1:8000/api/v1/execute", {
                     source_code: code, language_id: langId, stdin: tc.input
                 });
-                
-                const actualOutput = res.data.stdout ? res.data.stdout.trim() : "";
+
+                // 2. Poll for Result
+                const result = await pollResult(res.data.task_id);
+                const actualOutput = result.output ? result.output.trim() : "";
                 const expectedOutput = tc.output.trim();
 
                 // Validation Logic
                 if (actualOutput !== expectedOutput) {
                     allPassed = false;
                     currentOutput = `❌ TEST CASE ${i + 1} FAILED\n\n➤ Input:\n${tc.input}\n\n➤ Expected Output:\n${tc.output}\n\n➤ Your Output:\n${actualOutput}`;
-                    
-                    if (res.data.stderr) currentOutput += `\n\n➤ Error Log:\n${res.data.stderr}`;
-                    if (res.data.compile_output) currentOutput += `\n\n➤ Compilation Error:\n${res.data.compile_output}`;
                     break;
                 }
             }
@@ -281,7 +309,7 @@ const CodingPlayer = ({ course, token }: { course: any, token: string }) => {
     if (selectedProblem) {
         return (
             <div className="flex h-screen w-screen bg-[#F8FAFC] font-sans p-6 overflow-hidden relative">
-                 <ToastNotification toast={toast} setToast={setToast} /> {/* ✅ Toast Rendered */}
+                 <ToastNotification toast={toast} setToast={setToast} /> 
                  
                  {/* LEFT PANEL: Problem Info */}
                  <div className="w-[35%] flex flex-col h-full bg-white rounded-2xl shadow-sm border border-slate-200 mr-6 overflow-hidden">
@@ -372,18 +400,18 @@ const CodingPlayer = ({ course, token }: { course: any, token: string }) => {
         )
     }
 
-    // 2. RENDER LIST VIEW (Unchanged from previous functional version)
+    // 2. RENDER LIST VIEW
     return (
         <div className="min-h-screen bg-slate-50 font-sans p-10">
             <div className="max-w-6xl mx-auto">
                 <div className="flex justify-between items-center mb-10">
-                     <div className="flex items-center gap-4">
+                      <div className="flex items-center gap-4">
                         <button onClick={() => navigate("/student-dashboard")} className="p-2 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 text-slate-500"><ChevronLeft size={20} /></button>
                         <div>
                             <h1 className="text-3xl font-extrabold text-slate-900 m-0">{course.title}</h1>
                             <p className="text-slate-500 text-sm mt-1">Language: <span className="font-bold text-[#005EB8] uppercase">{course.language}</span></p>
                         </div>
-                     </div>
+                      </div>
                 </div>
 
                 <div className="flex gap-4 mb-8">
@@ -433,7 +461,7 @@ const CodingPlayer = ({ course, token }: { course: any, token: string }) => {
     )
 }
 
-// --- MAIN PLAYER COMPONENT ---
+// --- MAIN PLAYER COMPONENT (UNTOUCHED) ---
 const CoursePlayer = () => {
   const { courseId } = useParams();
   const navigate = useNavigate();
@@ -647,26 +675,26 @@ const CoursePlayer = () => {
                   {expandedModules.includes(module.id) && (
                     <div className="animate-fade-in">
                       {module.lessons.map((lesson: any) => {
-                         const isActive = activeLesson?.id === lesson.id;
-                         return (
-                             <div key={lesson.id} onClick={() => setActiveLesson(lesson)} className={`flex items-center gap-3 p-3 pl-12 cursor-pointer border-l-4 transition-all ${isActive ? 'bg-blue-50 border-blue-600' : 'bg-white border-transparent hover:bg-slate-50'}`}>
-                                 <div className={isActive ? "text-blue-600" : "text-slate-400"}>
-                                     {lesson.is_completed ? (
-                                          <CheckCircle size={16} className="text-[#87C232]" fill="#ecfccb" />
-                                     ) : (
-                                         <>
-                                             {lesson.type.includes("video") && <PlayCircle size={16} />}
-                                             {lesson.type === "note" && <FileText size={16} />}
-                                             {lesson.type === "quiz" && <HelpCircle size={16} />} 
-                                             {lesson.type.includes("code") && <Code size={16} />}
-                                             {lesson.type === "assignment" && <UploadCloud size={16} />}
-                                             {lesson.type === "live_class" && <Radio size={16} />}
-                                         </>
-                                     )}
-                                 </div>
-                                 <div className={`text-sm flex-1 ${isActive ? "text-blue-600 font-semibold" : "text-slate-600"} ${lesson.is_completed ? "line-through text-slate-400 decoration-slate-300" : ""}`}>{lesson.title}</div>
-                             </div>
-                         );
+                          const isActive = activeLesson?.id === lesson.id;
+                          return (
+                              <div key={lesson.id} onClick={() => setActiveLesson(lesson)} className={`flex items-center gap-3 p-3 pl-12 cursor-pointer border-l-4 transition-all ${isActive ? 'bg-blue-50 border-blue-600' : 'bg-white border-transparent hover:bg-slate-50'}`}>
+                                  <div className={isActive ? "text-blue-600" : "text-slate-400"}>
+                                      {lesson.is_completed ? (
+                                           <CheckCircle size={16} className="text-[#87C232]" fill="#ecfccb" />
+                                      ) : (
+                                          <>
+                                              {lesson.type.includes("video") && <PlayCircle size={16} />}
+                                              {lesson.type === "note" && <FileText size={16} />}
+                                              {lesson.type === "quiz" && <HelpCircle size={16} />} 
+                                              {lesson.type.includes("code") && <Code size={16} />}
+                                              {lesson.type === "assignment" && <UploadCloud size={16} />}
+                                              {lesson.type === "live_class" && <Radio size={16} />}
+                                          </>
+                                      )}
+                                  </div>
+                                  <div className={`text-sm flex-1 ${isActive ? "text-blue-600 font-semibold" : "text-slate-600"} ${lesson.is_completed ? "line-through text-slate-400 decoration-slate-300" : ""}`}>{lesson.title}</div>
+                              </div>
+                          );
                       })}
                     </div>
                   )}

@@ -2,7 +2,7 @@ from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sess
 from sqlalchemy.orm import declarative_base
 import os
 from dotenv import load_dotenv
-
+import redis.asyncio as redis
 # Load .env to get the secret Database URL
 load_dotenv()
 
@@ -52,3 +52,5 @@ async def get_db():
             yield session
         finally:
             await session.close()
+            
+redis_client = redis.from_url("redis://127.0.0.1:6379/0", decode_responses=True)
