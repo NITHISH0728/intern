@@ -74,7 +74,12 @@ async def on_startup():
 app.add_middleware(
     CORSMiddleware,
     # 🔒 SECURITY: In production, change "*" to ["https://your-frontend-domain.com"]
-    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"], 
+    allow_origins=[
+        "http://localhost:5173",      # Frontend Dev Port
+        "http://127.0.0.1:5173",      # Frontend Dev IP
+        "http://localhost:4173",      # ✅ Frontend PREVIEW Port (Build)
+        "http://127.0.0.1:4173",      # ✅ Frontend PREVIEW IP (Build)
+    ], 
     allow_credentials=True,
     allow_methods=["*"], 
     allow_headers=["*"], 

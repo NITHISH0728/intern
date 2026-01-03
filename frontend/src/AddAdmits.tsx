@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import axios from "axios";
+import API_BASE_URL from './config';
 import { 
   UserPlus, Upload, FileSpreadsheet, CheckCircle, 
   Download, AlertCircle, X, Shield 
@@ -45,7 +46,7 @@ const AddAdmits = () => {
     const fetchCourses = async () => {
       try {
         const token = localStorage.getItem("token");
-        const res = await axios.get("http://127.0.0.1:8000/api/v1/courses", {
+        const res = await axios.get(`${API_BASE_URL}/courses`, {
           headers: { Authorization: `Bearer ${token}` }
         });
         setCourses(res.data);
@@ -58,7 +59,7 @@ const AddAdmits = () => {
   const handleCreateInstructor = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-        await axios.post("http://127.0.0.1:8000/api/v1/users", {
+        await axios.post(`${API_BASE_URL}/users`, {
             email: instEmail,
             password: instPassword,
             name: instName,
@@ -90,7 +91,7 @@ const AddAdmits = () => {
           password: generatedPassword 
       };
       
-      const res = await axios.post("http://127.0.0.1:8000/api/v1/admin/admit-student", payload, {
+      await axios.post(`${API_BASE_URL}/admin/admit-student`, payload, {
         headers: { Authorization: `Bearer ${token}` }
       });
       triggerToast(`✅ Account Created & Email Sent to ${singleEmail}`, "success");
@@ -107,7 +108,7 @@ const AddAdmits = () => {
     formData.append("course_id", bulkCourseId.toString());
     try {
       const token = localStorage.getItem("token");
-      const res = await axios.post("http://127.0.0.1:8000/api/v1/admin/bulk-admit", formData, {
+      await axios.post(`${API_BASE_URL}/admin/bulk-admit`, formData, {
         headers: { Authorization: `Bearer ${token}`, "Content-Type": "multipart/form-data" }
       });
       triggerToast(`🎉 Bulk Process Complete! Emails Sent.`, "success");

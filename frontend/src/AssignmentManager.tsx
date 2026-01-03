@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import axios from "axios";
+import API_BASE_URL from './config';
 import { 
   ChevronDown, ChevronRight, CheckCircle, ExternalLink, 
   User, FileText, FolderOpen, AlertTriangle, X 
@@ -29,7 +30,7 @@ const AssignmentManager = () => {
     try {
       const token = localStorage.getItem("token");
       
-      const res = await axios.get("http://127.0.0.1:8000/api/v1/instructor/assignments", {
+      const res = await axios.get(`${API_BASE_URL}/instructor/assignments`, {
         headers: { Authorization: `Bearer ${token}` }
       });
       
@@ -45,7 +46,7 @@ const AssignmentManager = () => {
     try {
       const token = localStorage.getItem("token");
       
-      await axios.post(`http://127.0.0.1:8000/api/v1/instructor/verify-assignment/${submissionId}`, {}, {
+      await axios.post(`${API_BASE_URL}/instructor/verify-assignment/${submissionId}`, {}, {
         headers: { Authorization: `Bearer ${token}` }
       });
       

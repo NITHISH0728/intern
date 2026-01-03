@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import axios from "axios";
-import { Trash2, User, Search, AlertCircle, X, Calendar, BookOpen, CheckCircle, AlertTriangle } from "lucide-react"; // ✅ Added Icons
+import API_BASE_URL from './config';
+import { Trash2, User, Search, AlertCircle, X, Calendar,  CheckCircle, AlertTriangle } from "lucide-react"; // ✅ Added Icons
 
 interface Student {
   id: number;
@@ -47,9 +48,9 @@ const StudentManagement = () => {
   const fetchStudents = async () => {
     try {
       const token = localStorage.getItem("token");
-      const res = await axios.get("http://127.0.0.1:8000/api/v1/admin/students", {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+     const res = await axios.get(`${API_BASE_URL}/admin/students`, {
+    headers: { Authorization: `Bearer ${token}` }
+});
       setStudents(res.data);
     } catch (err) {
       console.error("Failed to load students", err);
@@ -66,9 +67,9 @@ const StudentManagement = () => {
     if (!studentToDelete) return;
     try {
       const token = localStorage.getItem("token");
-      await axios.delete(`http://127.0.0.1:8000/api/v1/admin/students/${studentToDelete.id}`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      await axios.delete(`${API_BASE_URL}/admin/students/${studentToDelete.id}`, {
+    headers: { Authorization: `Bearer ${token}` }
+});
       setStudents(students.filter(s => s.id !== studentToDelete.id));
       setStudentToDelete(null);
       

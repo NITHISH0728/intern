@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import axios from "axios";
+import API_BASE_URL from './config';
 import { 
   Users, TrendingUp, IndianRupee, BookOpen, 
   UserPlus, FileText, MessageSquare, X
@@ -48,14 +49,13 @@ const Dashboard = () => {
         const config = { headers: { Authorization: `Bearer ${token}` } };
         
         // 1. Fetch Real Courses Count
-        const coursesRes = await axios.get("http://127.0.0.1:8000/api/v1/courses", config);
+        const coursesRes = await axios.get(`${API_BASE_URL}/courses`, config);
         
         // 2. Fetch Real Students Count (Only if instructor)
         let studentCount = 0;
         if (storedRole === "instructor") {
             try {
-                const studentsRes = await axios.get("http://127.0.0.1:8000/api/v1/admin/students", config);
-                studentCount = studentsRes.data.length;
+                const studentsRes = await axios.get(`${API_BASE_URL}/admin/students`, config);           studentCount = studentsRes.data.length;
             } catch (e) { console.log("Not authorized to fetch students"); }
         }
 
@@ -72,8 +72,8 @@ const Dashboard = () => {
         }));
 
         // 4. CHECK FOR ACTIVE LIVE SESSION
-        const liveRes = await axios.get("http://127.0.0.1:8000/api/v1/live/active", config);
-        if (liveRes.data && liveRes.data.length > 0) {
+        const liveRes = await axios.get(`${API_BASE_URL}/live/active`, config);
+               if (liveRes.data && liveRes.data.length > 0) {
             setActiveSession(liveRes.data[0]);
         }
 

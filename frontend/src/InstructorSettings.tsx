@@ -1,7 +1,7 @@
 import { useState } from "react";
 import axios from "axios";
 import { Lock, Save, CheckCircle, AlertCircle, X } from "lucide-react"; // ✅ Added Icons
-
+import API_BASE_URL from './config';
 const InstructorSettings = () => {
   const [newPassword, setNewPassword] = useState("");
   const [saving, setSaving] = useState(false);
@@ -39,8 +39,7 @@ const InstructorSettings = () => {
     setSaving(true);
     try {
       const token = localStorage.getItem("token");
-      await axios.post("http://127.0.0.1:8000/api/v1/user/change-password", { new_password: newPassword }, { headers: { Authorization: `Bearer ${token}` } });
-      
+     await axios.post(`${API_BASE_URL}/user/change-password`, { new_password: newPassword }, { headers: { Authorization: `Bearer ${token}` } });     
       // ✅ Replaced Alert
       triggerToast("Password updated successfully!", "success");
       setNewPassword("");

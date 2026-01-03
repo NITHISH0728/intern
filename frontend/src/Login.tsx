@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import axios from "axios";
+import API_BASE_URL from './config';
 import { 
   User, Lock, Mail, ArrowRight, CheckCircle, 
-  ShieldCheck, Eye, EyeOff, Facebook, Github, Linkedin, 
+  ShieldCheck, Eye, EyeOff,  
   Smartphone, MessageSquare, AlertCircle, X 
 } from "lucide-react";
 
@@ -58,7 +59,7 @@ const Login = () => {
   const activeText = isSignUp ? "text-[#87C232]" : "text-[#005EB8]";
 
   // ✅ API URL FROM ENV
-  const API_URL = import.meta.env.VITE_API_URL || "http://127.0.0.1:8000/api/v1";
+  const API_URL = API_BASE_URL;
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => { setFormData({ ...formData, [e.target.name]: e.target.value }); };
   const triggerToast = (message: string, type: "success" | "error" = "success") => { setToast({ show: true, message, type }); setTimeout(() => setToast((prev) => ({ ...prev, show: false })), 3000); };
@@ -140,7 +141,7 @@ const Login = () => {
         return;
     }
 
-    confirmationResult.confirm(otp).then(async (result: any) => {
+   confirmationResult.confirm(otp).then(async () => {
         setIsPhoneVerified(true);
         setLoading(false);
         triggerToast("Phone Verified!", "success");

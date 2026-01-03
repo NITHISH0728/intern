@@ -4,7 +4,7 @@ import axios from "axios";
 import Editor from "@monaco-editor/react"; 
 import Plyr from "plyr-react"; 
 import "plyr/dist/plyr.css"; 
-
+import API_BASE_URL from './config';
 import { 
   PlayCircle, FileText, ChevronLeft, Menu, Code, HelpCircle, 
   UploadCloud, Play, Save, Monitor, Cpu, ChevronDown, ChevronRight, CreditCard,
@@ -44,7 +44,8 @@ const pollResult = async (taskId: string) => {
 
     while (attempts < maxRetries) {
         try {
-            const res = await axios.get(`http://127.0.0.1:8000/api/v1/result/${taskId}`);
+           // ✅ CHANGED: Uses API_BASE_URL
+            const res = await axios.get(`${API_BASE_URL}/result/${taskId}`);
             if (res.data.status === "completed") {
                 return res.data.data; // This contains { status: "success", output: "..." }
             }
@@ -102,11 +103,11 @@ const CodeCompiler = ({ lesson }: { lesson: any }) => {
     setOutput("Compiling & Executing (Queued)...");
     try {
         // 1. Submit Job
-        const res = await axios.post("http://127.0.0.1:8000/api/v1/execute", {
-            source_code: code,
-            language_id: language, 
-            stdin: activeProblem.testCases?.[0]?.input || "" 
-        });
+        const res = await axios.post(`${API_BASE_URL}/execute`, {
+    source_code: code,
+    language_id: language, 
+    stdin: activeProblem.testCases?.[0]?.input || "" 
+});
 
         const taskId = res.data.task_id;
         setOutput("Processing in Background...");
@@ -213,7 +214,7 @@ const CodingPlayer = ({ course, token }: { course: any, token: string }) => {
     const [code, setCode] = useState("");
     const [output, setOutput] = useState("Ready to execute...");
     const [loading, setLoading] = useState(false);
-    const [verdict, setVerdict] = useState<string | null>(null);
+    const [, setVerdict] = useState<string | null>(null);
 
     const [toast, setToast] = useState({ show: false, message: "", type: "success" });
     const triggerToast = (message: string, type: "success" | "error" = "success") => {
@@ -225,7 +226,7 @@ const CodingPlayer = ({ course, token }: { course: any, token: string }) => {
     
     const loadChallenges = async () => {
         try {
-            const res = await axios.get(`http://127.0.0.1:8000/api/v1/courses/${courseId}/challenges`, { headers: { Authorization: `Bearer ${token}` } });
+            const res = await axios.get(`${API_BASE_URL}/courses/${courseId}/challenges`, { headers: { Authorization: `Bearer ${token}` } });
             setChallenges(res.data);
         } catch(err) { console.error("Failed to load challenges", err); }
     };
@@ -268,9 +269,9 @@ const CodingPlayer = ({ course, token }: { course: any, token: string }) => {
                 
                 // 1. Submit Job
                 setOutput(`Running Test Case ${i + 1}/${cases.length}...`);
-                const res = await axios.post("http://127.0.0.1:8000/api/v1/execute", {
-                    source_code: code, language_id: langId, stdin: tc.input
-                });
+                const res = await axios.post(`${API_BASE_URL}/execute`, {
+    source_code: code, language_id: langId, stdin: tc.input
+});
 
                 // 2. Poll for Result
                 const result = await pollResult(res.data.task_id);
@@ -287,8 +288,7 @@ const CodingPlayer = ({ course, token }: { course: any, token: string }) => {
 
             if (allPassed) {
                 currentOutput = "🎉 SUCCESS! All Test Cases Passed.\n\nYour solution has been verified and saved.";
-                await axios.post(`http://127.0.0.1:8000/api/v1/challenges/${selectedProblem.id}/solve`, {}, { headers: { Authorization: `Bearer ${token}` } });
-                
+                await axios.post(`${API_BASE_URL}/challenges/${selectedProblem.id}/solve`, {}, { headers: { Authorization: `Bearer ${token}` } });
                 const updatedChallenges = challenges.map(c => 
                     c.id === selectedProblem.id ? { ...c, is_solved: true } : c
                 );
@@ -485,7 +485,7 @@ const CoursePlayer = () => {
 
   const handlePayment = async () => {
     try {
-        const orderUrl = "http://127.0.0.1:8000/api/v1/create-order";
+        const orderUrl = `${API_BASE_URL}/create-order`;
         const { data } = await axios.post(orderUrl, { amount: 599 }); 
         const options = {
             key: "rzp_test_Ru8lDcv8KvAiC0", 
@@ -510,8 +510,7 @@ const CoursePlayer = () => {
     const fetchCourse = async () => {
       try {
         const token = localStorage.getItem("token");
-        const res = await axios.get(`http://127.0.0.1:8000/api/v1/courses/${courseId}/player`, { headers: { Authorization: `Bearer ${token}` } });
-        setCourse(res.data);
+       const res = await axios.get(`${API_BASE_URL}/courses/${courseId}/player`, { headers: { Authorization: `Bearer ${token}` } }); setCourse(res.data);
         if (res.data.modules?.[0]) {
             setExpandedModules([res.data.modules[0].id]); 
             if (res.data.modules[0].lessons?.length > 0) setActiveLesson(res.data.modules[0].lessons[0]);
@@ -548,11 +547,11 @@ const CoursePlayer = () => {
     const token = localStorage.getItem("token");
 
     try {
-        const ticketRes = await axios.post("http://127.0.0.1:8000/api/v1/get-upload-url", {
-            lesson_title: activeLesson.title,
-            file_name: assignmentFile.name,
-            file_type: assignmentFile.type
-        }, { headers: { "Authorization": `Bearer ${token}` } });
+        const ticketRes = await axios.post(`${API_BASE_URL}/get-upload-url`, {
+    lesson_title: activeLesson.title,
+    file_name: assignmentFile.name,
+    file_type: assignmentFile.type
+}, { headers: { "Authorization": `Bearer ${token}` } });
 
         const uploadUrl = ticketRes.data.upload_url;
 
@@ -566,10 +565,10 @@ const CoursePlayer = () => {
             }
         });
         
-        await axios.post("http://127.0.0.1:8000/api/v1/confirm-submission", {
-            lesson_title: activeLesson.title,
-            file_name: assignmentFile.name
-        }, { headers: { "Authorization": `Bearer ${token}` } });
+        await axios.post(`${API_BASE_URL}/confirm-submission`, {
+    lesson_title: activeLesson.title,
+    file_name: assignmentFile.name
+}, { headers: { "Authorization": `Bearer ${token}` } });
 
         triggerToast(`✅ Assignment "${assignmentFile.name}" Submitted Successfully!`, "success"); // ✅ Replaced Alert
         setAssignmentFile(null); 

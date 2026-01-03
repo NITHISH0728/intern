@@ -1,8 +1,8 @@
 import { useState, useEffect } from "react";
 import { BrowserRouter as Router, Routes, Route, Navigate, useNavigate } from "react-router-dom";
 import axios from "axios";
-import { FileText, Edit, PlusCircle, BookOpen, Trash2, CheckCircle, AlertCircle, X, AlertTriangle } from "lucide-react"; // ✅ Added Icons
-
+import { FileText,  PlusCircle, BookOpen, Trash2, CheckCircle,  X, AlertTriangle } from "lucide-react"; // ✅ Added Icons
+import API_BASE_URL from './config';
 import AdminLogin from "./AdminLogin";
 import Login from "./Login";
 import LandingPage from "./LandingPage"; 
@@ -40,7 +40,7 @@ const CourseList = () => {
       const token = localStorage.getItem("token");
       if (!token) { setLoading(false); return; }
       try {
-        const res = await axios.get("http://127.0.0.1:8000/api/v1/courses", { headers: { Authorization: `Bearer ${token}` } });
+        const res = await axios.get(`${API_BASE_URL}/courses`, { headers: { Authorization: `Bearer ${token}` } });
         setCourses(res.data);
       } catch (err: any) {
         if (err.response?.status === 401) { localStorage.removeItem("token"); window.location.href = "/"; }
@@ -59,8 +59,8 @@ const CourseList = () => {
 
     try {
         const token = localStorage.getItem("token");
-        await axios.delete(`http://127.0.0.1:8000/api/v1/courses/${courseId}`, {
-            headers: { Authorization: `Bearer ${token}` }
+        await axios.delete(`${API_BASE_URL}/courses/${courseId}`, {
+         headers: { Authorization: `Bearer ${token}` }
         });
         
         // Remove from UI immediately

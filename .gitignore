@@ -1,2 +1,7 @@
 backend/token.json
 backend/credentials.json
+# .gitignore
+node_modules
+dist
+.env
+venv  <-- Add this! We don't want Python virtual envs in the frontend repo.

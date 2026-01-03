@@ -2,11 +2,12 @@ import { useState, useEffect, useRef } from "react";
 import axios from "axios";
 import { useNavigate } from "react-router-dom";
 import Editor from "@monaco-editor/react"; 
+import API_BASE_URL from './config';
 import { 
   LayoutDashboard, BookOpen, Compass, Award, LogOut, 
   CheckCircle, AlertTriangle, X, Save, 
   Code, Play, Monitor, ChevronRight,
-  Menu, Sparkles, Zap, User, PlayCircle, Trophy, Lock, CreditCard, Clock
+  Menu, Sparkles, Zap, User, PlayCircle, Trophy, Lock
 } from "lucide-react";
 import { motion } from "framer-motion";
 
@@ -35,7 +36,7 @@ const StudentDashboard = () => {
   const [activeTab, setActiveTab] = useState("home"); 
   const [availableCourses, setAvailableCourses] = useState<Course[]>([]);
   const [enrolledCourses, setEnrolledCourses] = useState<Course[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [, setLoading] = useState(true);
   const [currentProgress, setCurrentProgress] = useState({ percent: 0, completed: 0, total: 0 });
   const [collapsed, setCollapsed] = useState(false);
   const [showProfileMenu, setShowProfileMenu] = useState(false);
@@ -55,7 +56,7 @@ const StudentDashboard = () => {
   const [showPassKeyModal, setShowPassKeyModal] = useState<number | null>(null);
   
   // --- 🛡️ PROCTORING STATES ---
-  const [timeLeft, setTimeLeft] = useState(0);
+  const [, setTimeLeft] = useState(0);
   const [warnings, setWarnings] = useState(0); 
   const [faceStatus, setFaceStatus] = useState<"ok" | "missing" | "multiple">("ok");
   const [isFullScreenViolation, setIsFullScreenViolation] = useState(false);
@@ -109,9 +110,9 @@ const StudentDashboard = () => {
   const fetchCourseProgress = async (courseId: number) => {
     try {
         const token = localStorage.getItem("token");
-        const res = await axios.get(`http://127.0.0.1:8000/api/v1/courses/${courseId}/player`, {
-            headers: { Authorization: `Bearer ${token}` }
-        });
+       const res = await axios.get(`${API_BASE_URL}/courses/${courseId}/player`, {
+    headers: { Authorization: `Bearer ${token}` }
+});
         const modules = res.data.modules || [];
         const total = modules.length;
         const completed = modules.filter((m: any) => m.is_completed).length;
@@ -202,8 +203,8 @@ const StudentDashboard = () => {
     try {
       const token = localStorage.getItem("token");
       const config = { headers: { Authorization: `Bearer ${token}` } };
-      const allRes = await axios.get("http://127.0.0.1:8000/api/v1/courses", config);
-      const myRes = await axios.get("http://127.0.0.1:8000/api/v1/my-courses", config);
+      const allRes = await axios.get(`${API_BASE_URL}/courses`, config);
+      const myRes = await axios.get(`${API_BASE_URL}/my-courses`, config);
       const myCourseIds = new Set(myRes.data.map((c: Course) => c.id));
       setAvailableCourses(allRes.data.filter((c: Course) => !myCourseIds.has(c.id)));
       setEnrolledCourses(myRes.data);
@@ -214,8 +215,8 @@ const StudentDashboard = () => {
 
   const fetchCodeTests = async () => {
       try {
-          const res = await axios.get("http://127.0.0.1:8000/api/v1/code-tests", { headers: { Authorization: `Bearer ${localStorage.getItem("token")}` } });
-          setCodeTests(res.data);
+         const res = await axios.get(`${API_BASE_URL}/code-tests`, { headers: { Authorization: `Bearer ${localStorage.getItem("token")}` } });
+             setCodeTests(res.data);
       } catch(err) { console.error(err); }
   };
 
@@ -224,8 +225,7 @@ const StudentDashboard = () => {
       try {
           if (document.documentElement.requestFullscreen) await document.documentElement.requestFullscreen().catch(() => {});
           const formData = new FormData(); formData.append("pass_key", passKeyInput);
-          const res = await axios.post(`http://127.0.0.1:8000/api/v1/code-tests/${showPassKeyModal}/start`, formData, { headers: { Authorization: `Bearer ${token}` } });
-          
+         const res = await axios.post(`${API_BASE_URL}/code-tests/${showPassKeyModal}/start`, formData, { headers: { Authorization: `Bearer ${token}` } });
           const prevWarns = localStorage.getItem(`warns_${res.data.id}`);
           if (prevWarns && parseInt(prevWarns) > 2) { 
               if (document.fullscreenElement) document.exitFullscreen();
@@ -266,14 +266,14 @@ const StudentDashboard = () => {
       const expectedOutput = testCases[0]?.output || ""; 
 
       try { 
-          const res = await axios.post("http://127.0.0.1:8000/api/v1/execute", 
-            { source_code: userCode, language_id: language, stdin: sampleInput }, 
-            { headers: { Authorization: `Bearer ${localStorage.getItem("token")}` } }
-          ); 
+          const res = await axios.post(`${API_BASE_URL}/execute`, 
+    { source_code: userCode, language_id: language, stdin: sampleInput }, 
+    { headers: { Authorization: `Bearer ${localStorage.getItem("token")}` } }
+);
           const taskId = res.data.task_id;
           const intervalId = setInterval(async () => {
               try {
-                  const statusRes = await axios.get(`http://127.0.0.1:8000/api/v1/result/${taskId}`);
+                  const statusRes = await axios.get(`${API_BASE_URL}/result/${taskId}`);
                   if (statusRes.data.status === "completed") {
                       clearInterval(intervalId);
                       const result = statusRes.data.data;
@@ -312,8 +312,8 @@ const StudentDashboard = () => {
   const submitTest = async (disqualified = false) => { 
       if(!activeTest) return; 
       try { 
-          await axios.post("http://127.0.0.1:8000/api/v1/code-tests/submit", { 
-              test_id: activeTest.id, score: disqualified ? 0 : (executionStatus === "success" ? 100 : 40), 
+          await axios.post(`${API_BASE_URL}/code-tests/submit`, { 
+    test_id: activeTest.id, score: disqualified ? 0 : (executionStatus === "success" ? 100 : 40), 
               problems_solved: Object.keys(solutions).length, time_taken: "Finished" 
           }, { headers: { Authorization: `Bearer ${localStorage.getItem("token")}` } }); 
           setActiveTest(null); localStorage.removeItem(`sols_${activeTest.id}`); 
@@ -325,7 +325,7 @@ const StudentDashboard = () => {
   const handleFreeEnroll = async (courseId: number) => {
       setProcessing(true);
       try {
-          await axios.post(`http://127.0.0.1:8000/api/v1/enroll/${courseId}`, { type: "paid" }, { headers: { Authorization: `Bearer ${localStorage.getItem("token")}` } });
+          await axios.post(`${API_BASE_URL}/enroll/${courseId}`, { type: "paid" }, { headers: { Authorization: `Bearer ${localStorage.getItem("token")}` } });
           triggerToast("🎉 Enrolled!", "success"); fetchData(); setActiveTab("learning");
       } catch (err) { triggerToast("Enrollment failed.", "error"); } finally { setProcessing(false); }
   };
@@ -338,7 +338,7 @@ const StudentDashboard = () => {
       try {
           if (type === "trial") {
               // --- 1. START FREE TRIAL (Direct API Call) ---
-              await axios.post(`http://127.0.0.1:8000/api/v1/enroll/${selectedCourse.id}`, 
+             await axios.post(`${API_BASE_URL}/enroll/${selectedCourse.id}`,
                 { type: "trial" }, 
                 { headers: { Authorization: `Bearer ${localStorage.getItem("token")}` } }
               );
@@ -351,7 +351,7 @@ const StudentDashboard = () => {
 
               const token = localStorage.getItem("token");
               // Create Order
-              const orderRes = await axios.post("http://127.0.0.1:8000/api/v1/create-order", 
+              const orderRes = await axios.post(`${API_BASE_URL}/create-order`,
                   { amount: selectedCourse.price }, 
                   { headers: { Authorization: `Bearer ${token}` } }
               );
@@ -363,9 +363,9 @@ const StudentDashboard = () => {
                   name: "iQmath Pro",
                   description: `Unlock ${selectedCourse.title}`,
                   order_id: orderRes.data.id,
-                  handler: async function (response: any) {
+                  handler: async function () {
                       // Verify Payment & Enroll
-                      await axios.post(`http://127.0.0.1:8000/api/v1/enroll/${selectedCourse.id}`, 
+                      await axios.post(`${API_BASE_URL}/enroll/${selectedCourse.id}`, 
                           { type: "paid" }, 
                           { headers: { Authorization: `Bearer ${token}` } }
                       );
@@ -390,7 +390,7 @@ const StudentDashboard = () => {
   const handleDownloadCertificate = async (courseId: number, courseTitle: string) => {
       triggerToast("Downloading certificate...", "success");
       try {
-          const response = await axios.get(`http://127.0.0.1:8000/api/v1/generate-pdf/${courseId}`, {
+         const response = await axios.get(`${API_BASE_URL}/generate-pdf/${courseId}`, {
               headers: { Authorization: `Bearer ${localStorage.getItem("token")}` },
               responseType: 'blob', // Important: Tells Axios this is a file, not text
           });
@@ -483,7 +483,7 @@ const StudentDashboard = () => {
   const CourseCard = ({ course, type }: { course: Course, type: "enrolled" | "available" }) => (
     <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden hover:-translate-y-1 hover:shadow-lg transition-all">
         <div className="h-40 bg-slate-200 relative flex items-center justify-center">
-            {course.image_url ? (<img src={course.image_url.startsWith('http') ? course.image_url : `http://127.0.0.1:8000/${course.image_url}`} alt={course.title} className="w-full h-full object-cover" />) : (<BookOpen size={40} className="text-slate-400" />)}
+            {course.image_url ? (<img src={course.image_url.startsWith('http') ? course.image_url : `${API_BASE_URL.replace('/api/v1', '')}/${course.image_url}`} alt={course.title} className="w-full h-full object-cover" />) : (<BookOpen size={40} className="text-slate-400" />)}
             {type === "enrolled" && <div className="absolute top-2 right-2 bg-[#87C232] text-white px-2 py-1 rounded-full text-[10px] font-bold">ACTIVE</div>}
         </div>
         <div className="p-5">

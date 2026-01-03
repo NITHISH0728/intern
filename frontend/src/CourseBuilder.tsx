@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import axios from "axios";
+import API_BASE_URL from './config';
 import { 
   Plus, ArrowLeft, Video, HelpCircle, Zap, FileText, 
   Edit3, Layout, X, Link, Clock, Radio, 
@@ -69,12 +70,12 @@ const CourseBuilder = () => {
   const fetchModules = async () => {
     try {
       const token = localStorage.getItem("token");
-      const res = await axios.get(`http://127.0.0.1:8000/api/v1/courses/${courseId}/modules`, { headers: { Authorization: `Bearer ${token}` } });
+      const res = await axios.get(`${API_BASE_URL}/courses/${courseId}/modules`, { headers: { Authorization: `Bearer ${token}` } });
       setModules(res.data);
       if (res.data.length > 0 && !selectedModuleId) setSelectedModuleId(res.data[0].id);
 
       // ✅ NEW: FETCH COURSE DETAILS TO CHECK TYPE
-      const courseRes = await axios.get(`http://127.0.0.1:8000/api/v1/courses/${courseId}`, { headers: { Authorization: `Bearer ${token}` } });
+      const courseRes = await axios.get(`${API_BASE_URL}/courses/${courseId}`, { headers: { Authorization: `Bearer ${token}` } });
       setCourseDetails(courseRes.data); 
       
     } catch (err) { 
@@ -89,7 +90,7 @@ const CourseBuilder = () => {
     if (!newModuleTitle.trim()) return;
     try {
       const token = localStorage.getItem("token");
-      await axios.post(`http://127.0.0.1:8000/api/v1/courses/${courseId}/modules`, { title: newModuleTitle, order: modules.length + 1 }, { headers: { Authorization: `Bearer ${token}` } });
+      await axios.post(`${API_BASE_URL}/courses/${courseId}/modules`, { title: newModuleTitle, order: modules.length + 1 }, { headers: { Authorization: `Bearer ${token}` } });
       setNewModuleTitle(""); setShowAddModule(false); fetchModules();
       triggerToast("Module added successfully!", "success");
     } catch (err) { triggerToast("Error adding module", "error"); }
@@ -99,7 +100,7 @@ const CourseBuilder = () => {
     setIsPublishing(true);
     try {
       const token = localStorage.getItem("token");
-      await axios.patch(`http://127.0.0.1:8000/api/v1/courses/${courseId}/publish`, {}, { headers: { Authorization: `Bearer ${token}` } });
+      await axios.patch(`${API_BASE_URL}/courses/${courseId}/publish`, {}, { headers: { Authorization: `Bearer ${token}` } });
       triggerToast("🎉 Course Published! It is now live.", "success");
       setTimeout(() => navigate("/dashboard/courses"), 2000);
     } catch (err) { triggerToast("Error publishing course.", "error"); } finally { setIsPublishing(false); }
@@ -160,10 +161,10 @@ const CourseBuilder = () => {
     if (activeModal === "Live Class") {
         try {
             // 1. Activate Global Live Session
-            await axios.post("http://127.0.0.1:8000/api/v1/live/start", {
-                youtube_url: itemUrl,
-                topic: itemTitle
-            }, { headers: { Authorization: `Bearer ${token}` } });
+            await axios.post(`${API_BASE_URL}/live/start`, {
+    youtube_url: itemUrl,
+    topic: itemTitle
+}, { headers: { Authorization: `Bearer ${token}` } });
 
             // 2. Save as Lesson in Course Curriculum
             const payload = {
@@ -172,7 +173,7 @@ const CourseBuilder = () => {
                 data_url: itemUrl,
                 module_id: selectedModuleId
             };
-            await axios.post(`http://127.0.0.1:8000/api/v1/content`, payload, { headers: { Authorization: `Bearer ${token}` } });
+            await axios.post(`${API_BASE_URL}/content`, payload, { headers: { Authorization: `Bearer ${token}` } });
             
             triggerToast("🔴 Live Class Started & Added to Curriculum!", "success");
             setActiveModal(null); resetForm();
@@ -205,7 +206,7 @@ const CourseBuilder = () => {
     }
 
     try {
-      await axios.post(`http://127.0.0.1:8000/api/v1/content`, payload, { headers: { Authorization: `Bearer ${token}` } });
+      await axios.post(`${API_BASE_URL}/content`, payload, { headers: { Authorization: `Bearer ${token}` } });
       triggerToast(`✅ ${activeModal} added successfully!`, "success");
       setActiveModal(null); resetForm();
     } catch (err) { triggerToast("Failed to save.", "error"); }
@@ -230,14 +231,14 @@ const CourseBuilder = () => {
     useEffect(() => { loadChallenges(); }, [courseId]);
 
     const loadChallenges = async () => {
-         const res = await axios.get(`http://127.0.0.1:8000/api/v1/courses/${courseId}/challenges`, { headers: { Authorization: `Bearer ${token}` } });
+         const res = await axios.get(`${API_BASE_URL}/courses/${courseId}/challenges`, { headers: { Authorization: `Bearer ${token}` } });
          setChallenges(res.data);
     };
 
     const handleAutoFill = async () => {
         setLoadingAI(true);
         try {
-            const res = await axios.post("http://127.0.0.1:8000/api/v1/ai/generate-challenge", { title: cTitle });
+            const res = await axios.post(`${API_BASE_URL}/ai/generate-challenge`, { title: cTitle });
             setCDesc(res.data.description);
             const parsedTests = typeof res.data.test_cases === 'string' ? JSON.parse(res.data.test_cases) : res.data.test_cases;
             setCTests(parsedTests);
@@ -250,9 +251,9 @@ const CourseBuilder = () => {
 
     const saveChallenge = async () => {
         try {
-            await axios.post(`http://127.0.0.1:8000/api/v1/courses/${courseId}/challenges`, {
-                title: cTitle, description: cDesc, difficulty: activeTab, test_cases: JSON.stringify(cTests)
-            }, { headers: { Authorization: `Bearer ${token}` } });
+           await axios.post(`${API_BASE_URL}/courses/${courseId}/challenges`, {
+    title: cTitle, description: cDesc, difficulty: activeTab, test_cases: JSON.stringify(cTests)
+}, { headers: { Authorization: `Bearer ${token}` } });
             
             // ✅ FIX 2: Replace alert with Toast
             triggerToast("Problem Added Successfully!", "success");

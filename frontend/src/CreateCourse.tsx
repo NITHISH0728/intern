@@ -1,6 +1,7 @@
 import { useState } from "react";
 import axios from "axios";
 import { useNavigate } from "react-router-dom";
+import API_BASE_URL from './config';
 // ✅ Updated Imports: Added CheckCircle, AlertCircle, X for professional icons
 import { Save, Image as ImageIcon, IndianRupee, ArrowLeft, Clock, CheckCircle, AlertCircle, X } from "lucide-react";
 
@@ -49,8 +50,7 @@ const CreateCourse = () => {
 
     try {
       // ✅ CORRECT: Use the 'payload' variable
-      const response = await axios.post("http://127.0.0.1:8000/api/v1/courses", payload, { headers: { Authorization: `Bearer ${token}` } });
-      
+      const response = await axios.post(`${API_BASE_URL}/courses`, payload, { headers: { Authorization: `Bearer ${token}` } });
       // 1. Show Success Toast
       triggerToast("Course Created Successfully! 🎉 Redirecting...", "success");
       

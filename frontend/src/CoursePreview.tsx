@@ -1,10 +1,11 @@
 import { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import axios from "axios";
+import API_BASE_URL from './config';
 import { 
   ArrowLeft, Trash2, Edit2, Video, FileText, 
   Code, HelpCircle, FileQuestion, ChevronDown, ChevronRight,
-  CheckCircle, AlertCircle, X, AlertTriangle
+  CheckCircle, X, AlertTriangle
 } from "lucide-react";
 
 const CoursePreview = () => {
@@ -48,9 +49,9 @@ const CoursePreview = () => {
   const fetchCourseData = async () => {
     try {
       const token = localStorage.getItem("token");
-      const res = await axios.get(`http://127.0.0.1:8000/api/v1/courses/${courseId}/player`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      const res = await axios.get(`${API_BASE_URL}/courses/${courseId}/player`, {
+  headers: { Authorization: `Bearer ${token}` }
+});
       setCourse(res.data);
       setExpandedModules(res.data.modules.map((m: any) => m.id));
     } catch (err) { console.error("Error loading preview", err); } finally { setLoading(false); }
@@ -67,7 +68,7 @@ const CoursePreview = () => {
 
     try {
       const token = localStorage.getItem("token");
-      await axios.delete(`http://127.0.0.1:8000/api/v1/content/${itemId}`, { headers: { Authorization: `Bearer ${token}` } });
+      await axios.delete(`${API_BASE_URL}/content/${itemId}`, { headers: { Authorization: `Bearer ${token}` } });
       fetchCourseData(); 
       setDeleteConfirmId(null);
       triggerToast("Item deleted successfully", "success");
@@ -79,7 +80,7 @@ const CoursePreview = () => {
     if (!editingItem) return;
     try {
       const token = localStorage.getItem("token");
-      await axios.patch(`http://127.0.0.1:8000/api/v1/content/${editingItem.id}`, { title: editTitle, url: editUrl }, { headers: { Authorization: `Bearer ${token}` } });
+      await axios.patch(`${API_BASE_URL}/content/${editingItem.id}`, { title: editTitle, url: editUrl }, { headers: { Authorization: `Bearer ${token}` } });
       setEditingItem(null); fetchCourseData(); triggerToast("Item updated successfully", "success");
     } catch (err) { triggerToast("Failed to update item.", "error"); }
   };

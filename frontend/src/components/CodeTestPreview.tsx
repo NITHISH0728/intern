@@ -1,9 +1,9 @@
-import { useState, useEffect } from "react";
+import { useState } from "react"; // Removed useEffect
 import axios from "axios";
 
 import { 
   Play, CheckCircle, XCircle, AlertTriangle, 
-  ChevronLeft, ChevronRight, Clock, RefreshCw 
+  Clock, RefreshCw // Removed ChevronLeft, ChevronRight
 } from "lucide-react";
 
 // --- ⚙️ JUDGE0 API CONFIG ---
@@ -18,7 +18,10 @@ export const CodeTestPreview = ({ lesson }: { lesson: any }) => {
   const [code, setCode] = useState("// Write your code here (Node.js)...\n// Use console.log() to print output\n\nfunction solution(input) {\n  const [a, b] = input.split(' ');\n  console.log(parseInt(a) + parseInt(b));\n}\n\n// Reading stdin for Judge0\nconst fs = require('fs');\nconst input = fs.readFileSync(0, 'utf-8');\nif (input) solution(input);");
   const [consoleOutput, setConsoleOutput] = useState("Output will appear here after running your code...");
   const [activeTab, setActiveTab] = useState<"input" | "expected">("input");
-  const [activeCaseIndex, setActiveCaseIndex] = useState(0);
+  
+  // ✅ FIX: Removed unused setter 'setActiveCaseIndex'
+  const [activeCaseIndex] = useState(0);
+  
   const [isRunning, setIsRunning] = useState(false);
   const [testResults, setTestResults] = useState<any[]>([]);
 
@@ -35,7 +38,6 @@ export const CodeTestPreview = ({ lesson }: { lesson: any }) => {
 
   // 🏃 RUN CODE (Single Execution)
   const runCode = async () => {
-    // 🚫 REPLACED ALERT WITH PROFESSIONAL TOAST
     if (!config.testCases.length) {
         triggerToast("No test cases defined.", "error");
         return;
@@ -58,7 +60,6 @@ export const CodeTestPreview = ({ lesson }: { lesson: any }) => {
 
   // 🧪 RUN ALL TESTS (Batch Execution)
   const runAllTests = async () => {
-    // 🚫 SAFETY CHECK
     if (!config.testCases.length) {
         triggerToast("No test cases defined.", "error");
         return;
@@ -84,7 +85,6 @@ export const CodeTestPreview = ({ lesson }: { lesson: any }) => {
     setIsRunning(false);
     setConsoleOutput(`Execution Complete. Passed: ${results.filter((r:any) => r.passed).length}/${results.length}`);
     
-    // ✅ OPTIONAL: Success Toast on Completion
     triggerToast("All tests executed!", "success");
   };
 
