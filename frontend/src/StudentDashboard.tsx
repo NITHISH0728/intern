@@ -96,12 +96,19 @@ const StudentDashboard = () => {
     setTimeout(() => setToast(prev => ({ ...prev, show: false })), 3000);
   };
 
-  useEffect(() => {
+ useEffect(() => {
     const role = localStorage.getItem("role");
-    if (role === "instructor") { navigate("/dashboard"); return; }
-    fetchData();
-    fetchCodeTests();
-  }, [activeTab]);
+    if (role === "instructor") { 
+        navigate("/dashboard"); 
+        return; 
+    }
+    
+    // Check if we already have data to prevent unnecessary re-fetching
+    if (availableCourses.length === 0 && enrolledCourses.length === 0) {
+        fetchData();
+        fetchCodeTests();
+    }
+  }, []);
 
   useEffect(() => {
     if (enrolledCourses.length > 0) fetchCourseProgress(enrolledCourses[0].id);
