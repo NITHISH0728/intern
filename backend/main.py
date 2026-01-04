@@ -653,7 +653,11 @@ async def generate_pdf_endpoint(course_id: int, db: AsyncSession = Depends(get_d
 async def get_my_courses(db: AsyncSession = Depends(get_db), current_user: models.User = Depends(get_current_user)):
     res = await db.execute(select(models.Enrollment).options(selectinload(models.Enrollment.course)).where(models.Enrollment.user_id == current_user.id))
     enrollments = res.scalars().all()
-    return [e.course for e in enrollments]
+    
+    # 🟢 FIX: Filter out None values if a course was deleted
+    valid_courses = [e.course for e in enrollments if e.course is not None]
+    
+    return valid_courses
 
 @app.post("/api/v1/user/change-password")
 async def change_password(req: PasswordChange, db: AsyncSession = Depends(get_db), current_user: models.User = Depends(get_current_user)):

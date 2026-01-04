@@ -3,37 +3,32 @@ from sqlalchemy.orm import declarative_base
 import os
 from dotenv import load_dotenv
 import redis.asyncio as redis
-# Load .env to get the secret Database URL
+
 load_dotenv()
 
-# 1. Get the DB URL
-# We assume your .env has: DATABASE_URL="postgresql://user:pass@localhost/dbname"
 DATABASE_URL = os.getenv("DATABASE_URL")
 
 if not DATABASE_URL:
-    raise ValueError("❌ DATABASE_URL is missing in .env file! Cannot start server.")
+    raise ValueError("❌ DATABASE_URL is missing in .env file!")
 
-# 🔒 CONCRETE FIX: Ensure we use the Async Driver (asyncpg)
-# If the URL in .env is "postgresql://...", this line forces it to "postgresql+asyncpg://..."
+# Ensure Async Driver
 if "postgresql+asyncpg" not in DATABASE_URL:
     ASYNC_DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+asyncpg://")
 else:
     ASYNC_DATABASE_URL = DATABASE_URL
 
-# 2. The Concrete Pillar (Asynchronous Connection Pool)
-# This engine handles non-blocking I/O. 
+# 🟢 FIX: OPTIMIZED FOR FREE TIER
 engine = create_async_engine(
     ASYNC_DATABASE_URL,
-    echo=False,             # Set True only for debugging (logs every SQL query)
-    pool_size=20,           # Keep 20 connections open
-    max_overflow=40,        # Burst capacity for 1000 users
-    pool_timeout=30,        # 30s wait time before error
-    pool_recycle=1800,      # Recycle connections every 30 mins
-    pool_pre_ping=True      # ✅ SELF-HEALING: Checks connection health before use
+    echo=False,
+    # ⚠️ CRITICAL CHANGE: Reduced to prevent "Too many clients" error
+    pool_size=5,            # Keep only 5 connections open (Safe for Free Tier)
+    max_overflow=10,        # Allow 10 max during traffic spikes
+    pool_timeout=30,
+    pool_recycle=1800,
+    pool_pre_ping=True      # Check connection before using
 )
 
-# 3. The Session Factory (Async)
-# This creates sessions that don't block the server thread
 AsyncSessionLocal = async_sessionmaker(
     bind=engine,
     class_=AsyncSession,
@@ -44,15 +39,12 @@ AsyncSessionLocal = async_sessionmaker(
 
 Base = declarative_base()
 
-# 4. Dependency Injection Helper
-# You will import this into main.py to get database sessions
 async def get_db():
     async with AsyncSessionLocal() as session:
         try:
             yield session
         finally:
             await session.close()
-            
-REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379") 
 
+REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379") 
 redis_client = redis.from_url(REDIS_URL, decode_responses=True)

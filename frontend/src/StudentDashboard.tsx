@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import axios from "axios";
 import { useNavigate } from "react-router-dom";
 import Editor from "@monaco-editor/react"; 
@@ -11,10 +11,10 @@ import {
 } from "lucide-react";
 import { motion } from "framer-motion";
 
-// ❌ COMMENTED OUT HEAVY AI IMPORTS FOR TESTING
-// import * as tf from "@tensorflow/tfjs";
-// import * as blazeface from "@tensorflow-models/blazeface";
-// import "@tensorflow/tfjs-backend-webgl";
+// ✅ AI IMPORTS (Safe to keep now that structure is fixed)
+import * as tf from "@tensorflow/tfjs";
+import * as blazeface from "@tensorflow-models/blazeface";
+import "@tensorflow/tfjs-backend-webgl";
 
 // --- TYPES ---
 interface Course { id: number; title: string; description: string; price: number; image_url: string; instructor_id: number; }
@@ -31,7 +31,7 @@ const loadRazorpayScript = () => {
     });
 };
 
-// --- HELPER COMPONENTS ---
+// --- 🟢 HELPER COMPONENTS (MOVED OUTSIDE: THE FIX) ---
 
 const SidebarItem = ({ icon, label, active, onClick, collapsed }: any) => (
   <button onClick={onClick} className={`flex items-center gap-3 w-full p-3 rounded-xl transition-all ${active ? "bg-white text-[#005EB8] font-bold shadow-sm" : "text-slate-500 hover:bg-slate-100"}`}>
@@ -79,19 +79,19 @@ const CourseCard = ({ course, type, navigate, handleFreeEnroll, openEnrollModal 
     );
 };
 
+// --- 🔵 MAIN COMPONENT ---
+
 const StudentDashboard = () => {
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState("home"); 
   const [availableCourses, setAvailableCourses] = useState<Course[]>([]);
   const [enrolledCourses, setEnrolledCourses] = useState<Course[]>([]);
-  
-  // ✅ FIXED: Correct loading state
   const [loading, setLoading] = useState(true);
-  
   const [currentProgress, setCurrentProgress] = useState({ percent: 0, completed: 0, total: 0 });
   const [collapsed, setCollapsed] = useState(false);
   const [showProfileMenu, setShowProfileMenu] = useState(false);
   
+  // Modal & Settings
   const [showModal, setShowModal] = useState(false);
   const [selectedCourse, setSelectedCourse] = useState<Course | null>(null);
   const [processing, setProcessing] = useState(false);
@@ -99,20 +99,19 @@ const StudentDashboard = () => {
     show: false, message: "", type: "success" 
   });
 
+  // --- CODE ARENA STATES ---
   const [codeTests, setCodeTests] = useState<CodeTest[]>([]);
   const [activeTest, setActiveTest] = useState<CodeTest | null>(null);
   const [passKeyInput, setPassKeyInput] = useState("");
   const [showPassKeyModal, setShowPassKeyModal] = useState<number | null>(null);
   
-  // --- PROCTORING STATES ---
+  // --- 🛡️ PROCTORING STATES ---
   const [, setTimeLeft] = useState(0);
   const [warnings, setWarnings] = useState(0); 
-  
-  // ❌ COMMENTED OUT FACE STATUS FOR TEST
-  // const [faceStatus, setFaceStatus] = useState<"ok" | "missing" | "multiple">("ok");
-  
+  const [faceStatus, setFaceStatus] = useState<"ok" | "missing" | "multiple">("ok");
   const [isFullScreenViolation, setIsFullScreenViolation] = useState(false);
   
+  // Problem & Code State
   const [currentProblemIndex, setCurrentProblemIndex] = useState(0);
   const [solutions, setSolutions] = useState<{[key: number]: string}>({});
   const [userCode, setUserCode] = useState("");
@@ -121,9 +120,9 @@ const StudentDashboard = () => {
   const [consoleOutput, setConsoleOutput] = useState("Ready to execute...");
   const [executionStatus, setExecutionStatus] = useState("idle"); 
   
-  // ❌ COMMENTED OUT VIDEO REF FOR TEST
-  // const videoRef = useRef<HTMLVideoElement>(null);
+  const videoRef = useRef<HTMLVideoElement>(null);
 
+  // 🎨 PROFESSIONAL THEME PALETTE
   const brand = { 
     iqBlue: "#005EB8", iqGreen: "#87C232", mainBg: "#E2E8F0", cardBg: "#F8FAFC", border: "#cbd5e1", textMain: "#1e293b", textLight: "#64748b" 
   };
@@ -135,11 +134,13 @@ const StudentDashboard = () => {
     { id: 63, name: "JavaScript (Node.js)", value: "javascript" },
   ];
 
+  // ✅ Toast Helper
   const triggerToast = (message: string, type: "success" | "error" = "success") => {
     setToast({ show: true, message, type });
     setTimeout(() => setToast(prev => ({ ...prev, show: false })), 3000);
   };
 
+  // ✅ INITIAL FETCH WITH SAFETY CHECKS
   const fetchData = async () => {
     setLoading(true);
     try {
@@ -153,6 +154,7 @@ const StudentDashboard = () => {
         axios.get(`${API_BASE_URL}/my-courses`, config)
       ]);
 
+      // SAFETY CHECK: Ensure we have arrays
       const allData = Array.isArray(allRes.data) ? allRes.data : [];
       const myData = Array.isArray(myRes.data) ? myRes.data : [];
 
@@ -192,7 +194,7 @@ const StudentDashboard = () => {
         const res = await axios.get(`${API_BASE_URL}/courses/${courseId}/player`, {
             headers: { Authorization: `Bearer ${token}` }
         });
-        const modules = res.data.modules || [];
+        const modules = res.data?.modules || [];
         const total = modules.length;
         const completed = modules.filter((m: any) => m.is_completed).length;
         const percent = total === 0 ? 0 : Math.round((completed / total) * 100);
@@ -200,7 +202,7 @@ const StudentDashboard = () => {
     } catch (err) { console.error("Failed to fetch progress", err); }
   };
 
-  // ❌ --- MODIFIED: HEAVY AI LOGIC REMOVED FOR TESTING ---
+  // 🛡️ MILITARY GRADE PROCTORING LOGIC
   useEffect(() => {
       let aiInterval: any;
       if (activeTest) {
@@ -244,8 +246,6 @@ const StudentDashboard = () => {
           document.addEventListener("fullscreenchange", handleFullScreenChange);
           document.addEventListener("visibilitychange", handleVisibilityChange);
 
-          // ❌ ❌ ❌ AI SETUP COMMENTED OUT ❌ ❌ ❌
-          /*
           const setupAI = async () => {
               try {
                   await tf.setBackend('webgl'); 
@@ -269,26 +269,32 @@ const StudentDashboard = () => {
               } catch(err) {}
           };
           setupAI();
-          */
 
           return () => {
               clearInterval(timer); clearInterval(aiInterval);
               document.removeEventListener("fullscreenchange", handleFullScreenChange);
               document.removeEventListener("visibilitychange", handleVisibilityChange);
-              // if(videoRef.current?.srcObject) (videoRef.current.srcObject as MediaStream).getTracks().forEach(t => t.stop());
+              if(videoRef.current?.srcObject) (videoRef.current.srcObject as MediaStream).getTracks().forEach(t => t.stop());
           };
       }
   }, [activeTest]);
 
-  // ... (All Handler functions like handleStartTest, handleRun, submitTest etc are kept same) ...
   const handleStartTest = async () => {
       const token = localStorage.getItem("token");
       try {
           if (document.documentElement.requestFullscreen) await document.documentElement.requestFullscreen().catch(() => {});
           const formData = new FormData(); formData.append("pass_key", passKeyInput);
           const res = await axios.post(`${API_BASE_URL}/code-tests/${showPassKeyModal}/start`, formData, { headers: { Authorization: `Bearer ${token}` } });
-          setActiveTest(res.data); setShowPassKeyModal(null);
-      } catch(err) { triggerToast("Invalid Pass Key", "error"); }
+          const prevWarns = localStorage.getItem(`warns_${res.data.id}`);
+          if (prevWarns && parseInt(prevWarns) > 2) { 
+              if (document.fullscreenElement) document.exitFullscreen();
+              triggerToast("Test Terminated Previously", "error"); return; 
+          }
+          setActiveTest(res.data); setTimeLeft(res.data.time_limit * 60); setShowPassKeyModal(null); setWarnings(prevWarns ? parseInt(prevWarns) : 0);
+      } catch(err) { 
+          if (document.fullscreenElement) document.exitFullscreen();
+          triggerToast("Invalid Pass Key", "error"); 
+      }
   };
 
   const returnToFullScreen = async () => {
@@ -308,16 +314,21 @@ const StudentDashboard = () => {
       triggerToast("✅ Code Saved!", "success"); 
   };
 
+  // EXECUTION LOGIC
   const handleRun = async () => { 
       setExecutionStatus("running"); 
       setConsoleOutput("🚀 Job queued... Waiting for compiler..."); 
+      
       const currentProb = activeTest?.problems[currentProblemIndex]; 
       const testCases = currentProb ? JSON.parse(currentProb.test_cases) : []; 
       const sampleInput = testCases[0]?.input || "5"; 
       const expectedOutput = testCases[0]?.output || ""; 
 
       try { 
-          const res = await axios.post(`${API_BASE_URL}/execute`, { source_code: userCode, language_id: language, stdin: sampleInput }, { headers: { Authorization: `Bearer ${localStorage.getItem("token")}` } });
+          const res = await axios.post(`${API_BASE_URL}/execute`, 
+            { source_code: userCode, language_id: language, stdin: sampleInput }, 
+            { headers: { Authorization: `Bearer ${localStorage.getItem("token")}` } }
+          );
           const taskId = res.data.task_id;
           const intervalId = setInterval(async () => {
               try {
@@ -340,7 +351,10 @@ const StudentDashboard = () => {
                   }
               } catch (err) { clearInterval(intervalId); setExecutionStatus("error"); }
           }, 1000);
-      } catch (err: any) { setExecutionStatus("error"); setConsoleOutput("❌ Failed to queue job."); } 
+      } catch (err: any) { 
+          setExecutionStatus("error"); 
+          setConsoleOutput("❌ Failed to queue job."); 
+      } 
   };
 
   const switchQuestion = (index: number) => { 
@@ -354,7 +368,10 @@ const StudentDashboard = () => {
   const submitTest = async (disqualified = false) => { 
       if(!activeTest) return; 
       try { 
-          await axios.post(`${API_BASE_URL}/code-tests/submit`, { test_id: activeTest.id, score: disqualified ? 0 : 100, problems_solved: Object.keys(solutions).length, time_taken: "Finished" }, { headers: { Authorization: `Bearer ${localStorage.getItem("token")}` } }); 
+          await axios.post(`${API_BASE_URL}/code-tests/submit`, { 
+            test_id: activeTest.id, score: disqualified ? 0 : (executionStatus === "success" ? 100 : 40), 
+            problems_solved: Object.keys(solutions).length, time_taken: "Finished" 
+          }, { headers: { Authorization: `Bearer ${localStorage.getItem("token")}` } }); 
           setActiveTest(null); localStorage.removeItem(`sols_${activeTest.id}`); 
           if(document.fullscreenElement) document.exitFullscreen(); 
           triggerToast(disqualified ? "Test Terminated." : "Test Submitted Successfully!", disqualified ? "error" : "success"); 
@@ -372,54 +389,80 @@ const StudentDashboard = () => {
   const handleEnrollStrategy = async (type: "trial" | "paid") => {
       if (!selectedCourse) return;
       setProcessing(true);
+
       try {
           if (type === "trial") {
-             await axios.post(`${API_BASE_URL}/enroll/${selectedCourse.id}`, { type: "trial" }, { headers: { Authorization: `Bearer ${localStorage.getItem("token")}` } });
-              triggerToast(`🎉 Trial Started!`, "success"); fetchData(); setShowModal(false); setActiveTab("learning");
+             await axios.post(`${API_BASE_URL}/enroll/${selectedCourse.id}`,
+                { type: "trial" }, 
+                { headers: { Authorization: `Bearer ${localStorage.getItem("token")}` } }
+              );
+              triggerToast(`🎉 Free Trial Started for ${selectedCourse.title}!`, "success");
+              fetchData(); setShowModal(false); setActiveTab("learning");
           } else {
               const isLoaded = await loadRazorpayScript();
               if (!isLoaded) { triggerToast("SDK Failed to load", "error"); return; }
+
               const token = localStorage.getItem("token");
-              const orderRes = await axios.post(`${API_BASE_URL}/create-order`, { amount: selectedCourse.price }, { headers: { Authorization: `Bearer ${token}` } });
+              const orderRes = await axios.post(`${API_BASE_URL}/create-order`,
+                  { amount: selectedCourse.price }, 
+                  { headers: { Authorization: `Bearer ${token}` } }
+              );
+
               const options = {
                   key: import.meta.env.VITE_RAZORPAY_KEY_ID, 
-                  amount: orderRes.data.amount, currency: orderRes.data.currency, order_id: orderRes.data.id,
+                  amount: orderRes.data.amount,
+                  currency: orderRes.data.currency,
+                  name: "iQmath Pro",
+                  description: `Unlock ${selectedCourse.title}`,
+                  order_id: orderRes.data.id,
                   handler: async function () {
-                      await axios.post(`${API_BASE_URL}/enroll/${selectedCourse.id}`, { type: "paid" }, { headers: { Authorization: `Bearer ${token}` } });
-                      triggerToast("🎉 Payment Successful!", "success"); fetchData(); setShowModal(false); setActiveTab("learning");
+                      await axios.post(`${API_BASE_URL}/enroll/${selectedCourse.id}`, 
+                          { type: "paid" }, 
+                          { headers: { Authorization: `Bearer ${token}` } }
+                      );
+                      triggerToast("🎉 Payment Successful! Course Unlocked.", "success");
+                      fetchData(); setShowModal(false); setActiveTab("learning");
                   },
-                  prefill: { name: "Student", email: "student@iqmath.com" }, theme: { color: "#005EB8" },
+                  prefill: { name: "Student", email: "student@iqmath.com" },
+                  theme: { color: "#005EB8" },
               };
-              const rzp = new (window as any).Razorpay(options); rzp.open();
+
+              const rzp = new (window as any).Razorpay(options);
+              rzp.open();
           }
-      } catch (err) { triggerToast("Transaction Failed.", "error"); } finally { setProcessing(false); }
+      } catch (err) {
+          triggerToast("Transaction Failed.", "error");
+      } finally {
+          setProcessing(false);
+      }
   };
   
   const handleDownloadCertificate = async (courseId: number, courseTitle: string) => {
       triggerToast("Downloading certificate...", "success");
       try {
-         const response = await axios.get(`${API_BASE_URL}/generate-pdf/${courseId}`, { headers: { Authorization: `Bearer ${localStorage.getItem("token")}` }, responseType: 'blob' });
+         const response = await axios.get(`${API_BASE_URL}/generate-pdf/${courseId}`, {
+             headers: { Authorization: `Bearer ${localStorage.getItem("token")}` },
+             responseType: 'blob',
+         });
+
          const url = window.URL.createObjectURL(new Blob([response.data]));
-         const link = document.createElement('a'); link.href = url; link.setAttribute('download', `${courseTitle}_Certificate.pdf`); document.body.appendChild(link); link.click(); link.remove(); window.URL.revokeObjectURL(url);
-      } catch (error) { triggerToast("Download Failed.", "error"); }
+         const link = document.createElement('a');
+         link.href = url;
+         link.setAttribute('download', `${courseTitle.replace(/\s+/g, '_')}_Certificate.pdf`);
+         document.body.appendChild(link);
+         link.click();
+         link.remove();
+         window.URL.revokeObjectURL(url);
+      } catch (error) {
+          console.error("Download error:", error);
+          triggerToast("Failed to download certificate. Try again.", "error");
+      }
   };
 
   const openEnrollModal = (course: Course) => { setSelectedCourse(course); setShowModal(true); };
   const handleLogout = () => { localStorage.clear(); navigate("/"); };
 
-  // ✅ LOADING SPINNER UI
-  if (loading) {
-      return (
-          <div className="flex h-screen items-center justify-center bg-[#E2E8F0]">
-              <div className="flex flex-col items-center gap-4">
-                  <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#005EB8]"></div>
-                  <p className="text-slate-600 font-bold animate-pulse">Initializing Dashboard...</p>
-              </div>
-          </div>
-      );
-  }
-
-  // --- RENDER DASHBOARD ---
+  // --- ⚔️ THE REAL CODE ARENA VIEW ---
   if (activeTest) { 
     return (
       <div className="flex h-screen bg-[#F8FAFC] font-sans overflow-hidden relative">
@@ -445,11 +488,9 @@ const StudentDashboard = () => {
                  <div className="space-y-2">{JSON.parse(activeTest.problems[currentProblemIndex]?.test_cases || "[]").map((tc: any, i: number) => ( <div key={i} className="bg-slate-50 border border-slate-200 p-3 rounded text-sm"><span className="font-mono font-bold block">Input: {tc.input}</span></div>))}</div>
             </div>
             <div className="h-56 bg-slate-100 border-t border-slate-300 p-4 relative flex items-center justify-center overflow-hidden">
-                {/* ❌ COMMENTED OUT VIDEO ELEMENT ❌ */}
-                {/* <video ref={videoRef} autoPlay muted className="w-full h-full object-cover rounded-lg border-2 border-slate-300 bg-black" /> */}
-                <div className="w-full h-full bg-black flex items-center justify-center text-slate-500 font-bold">CAMERA DISABLED FOR TESTING</div>
-                
-                {/* {faceStatus !== "ok" && <div className="absolute inset-0 bg-black/50 flex items-center justify-center z-10"><span className="text-red-400 font-bold bg-black px-2 py-1 rounded border border-red-500">FACE MISSING</span></div>} */}
+                <video ref={videoRef} autoPlay muted className="w-full h-full object-cover rounded-lg border-2 border-slate-300 bg-black" />
+                <div className="absolute top-6 left-6 bg-red-600 text-white text-[10px] font-bold px-2 py-0.5 rounded flex items-center gap-1"><div className="w-2 h-2 rounded-full bg-white animate-pulse"></div> REC</div>
+                {faceStatus !== "ok" && <div className="absolute inset-0 bg-black/50 flex items-center justify-center z-10"><span className="text-red-400 font-bold bg-black px-2 py-1 rounded border border-red-500">FACE MISSING</span></div>}
             </div>
         </div>
 
@@ -476,6 +517,18 @@ const StudentDashboard = () => {
         {toast.show && <div className={`fixed top-5 right-5 z-[10000] px-6 py-3 rounded-lg shadow-xl text-white font-bold flex items-center gap-3 animate-bounce ${toast.type === "success" ? "bg-green-500" : "bg-red-500"}`}>{toast.type === "success" ? <CheckCircle size={20}/> : <AlertTriangle size={20}/>}{toast.message}</div>}
       </div>
     );
+  }
+  
+  // ✅ LOADING SPINNER UI
+  if (loading) {
+      return (
+          <div className="flex h-screen items-center justify-center bg-[#E2E8F0]">
+              <div className="flex flex-col items-center gap-4">
+                  <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#005EB8]"></div>
+                  <p className="text-slate-600 font-bold animate-pulse">Loading iQmath Dashboard...</p>
+              </div>
+          </div>
+      );
   }
 
   // --- DASHBOARD UI ---
