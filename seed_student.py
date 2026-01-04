@@ -1,8 +1,8 @@
 import requests
 import sys
-
+import os
 # ⚙️ CONFIGURATION
-BASE_URL = "http://127.0.0.1:8000/api/v1"
+BASE_URL = os.getenv("API_URL", "http://127.0.0.1:8000/api/v1")
 
 def create_student():
     print("🚀 Creating Student User...")

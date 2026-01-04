@@ -2,7 +2,9 @@
 import subprocess
 import os
 import uuid
-import sys  # 👈 Added sys import
+import sys
+import tempfile # 👈 Added tempfile for safe cloud file creation
+import shutil   # 👈 Added for safer file cleanup
 from celery_config import celery_app
 from dotenv import load_dotenv
 
@@ -15,7 +17,6 @@ LANGUAGE_CONFIG = {
         "extension": ".py",
         # 🟢 FIX: Use sys.executable. 
         # This forces the worker to use the currently running Python (e.g., inside your venv)
-        # instead of the system 'python3' command which triggers the Windows Store error.
         "command": [sys.executable] 
     },
     63: {
@@ -24,8 +25,8 @@ LANGUAGE_CONFIG = {
     },
     54: {
         "extension": ".cpp",
-        "compile": ["g++", "-o", "output_binary"],
-        "run": ["./output_binary"]
+        "compile": ["g++", "-o"], # logic slightly adjusted below
+        "run": []
     }
 }
 
@@ -41,20 +42,32 @@ def run_code_task(self, source_code, language_id, stdin):
     
     config = LANGUAGE_CONFIG[language_id]
     
-    # 2. Create a temporary file
+    # 2. Create a temporary file safely
+    # This finds the correct 'temp' folder for the OS (Windows or Linux/Render)
+    temp_dir = tempfile.gettempdir()
     unique_id = str(uuid.uuid4())
-    filename = f"temp_{unique_id}{config['extension']}"
+    filename = os.path.join(temp_dir, f"temp_{unique_id}{config['extension']}")
     
+    # Output binary path (for C++)
+    binary_name = os.path.join(temp_dir, f"output_{unique_id}")
+    if os.name == 'nt': binary_name += ".exe"
+
     try:
         # Write code to disk
         with open(filename, "w", encoding="utf-8") as f:
             f.write(source_code)
             
         # 3. Execution Logic
+        output = ""
+
         # Python & Node
         if language_id in [71, 63]:
             command = config["command"] + [filename]
             
+            # Check if Node exists before running (Prevent crash if Node missing)
+            if language_id == 63 and shutil.which("node") is None:
+                return {"status": "error", "output": "Node.js is not installed on this server."}
+
             process = subprocess.run(
                 command,
                 input=stdin, 
@@ -67,19 +80,21 @@ def run_code_task(self, source_code, language_id, stdin):
 
         # C++
         elif language_id == 54:
+            # Check if G++ exists
+            if shutil.which("g++") is None:
+                return {"status": "error", "output": "G++ compiler is not installed on this server."}
+
             # A. Compile
-            compile_cmd = config["compile"] + [filename]
+            # Command: g++ -o /tmp/output_uuid /tmp/temp_uuid.cpp
+            compile_cmd = ["g++", "-o", binary_name, filename]
             compile_proc = subprocess.run(compile_cmd, capture_output=True, text=True)
             
             if compile_proc.returncode != 0:
                 output = f"Compilation Error:\n{compile_proc.stderr}"
             else:
                 # B. Run
-                # On Windows, ./output_binary might fail. We check OS.
-                run_cmd = config["run"]
-                if os.name == 'nt': # If Windows
-                    run_cmd = ["output_binary.exe"]
-
+                run_cmd = [binary_name]
+                
                 run_proc = subprocess.run(
                     run_cmd, 
                     input=stdin, 
@@ -88,10 +103,6 @@ def run_code_task(self, source_code, language_id, stdin):
                     timeout=3
                 )
                 output = run_proc.stdout if run_proc.returncode == 0 else run_proc.stderr
-                
-                # Cleanup binary
-                if os.path.exists("output_binary.exe"): os.remove("output_binary.exe")
-                if os.path.exists("output_binary"): os.remove("output_binary")
 
         # 4. Return Result (Correct Key for Frontend)
         return {
@@ -106,6 +117,11 @@ def run_code_task(self, source_code, language_id, stdin):
         return {"status": "error", "output": f"System Error: {str(e)}"}
     
     finally:
-        # 5. Cleanup
+        # 5. Cleanup (Delete temp files)
         if os.path.exists(filename):
-            os.remove(filename)
+            try: os.remove(filename)
+            except: pass
+            
+        if os.path.exists(binary_name):
+            try: os.remove(binary_name)
+            except: pass
