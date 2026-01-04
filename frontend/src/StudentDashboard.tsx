@@ -31,12 +31,63 @@ const loadRazorpayScript = () => {
     });
 };
 
+// --- 🟢 HELPER COMPONENTS (MOVED OUTSIDE TO FIX RENDERING) ---
+
+const SidebarItem = ({ icon, label, active, onClick, collapsed }: any) => (
+  <button onClick={onClick} className={`flex items-center gap-3 w-full p-3 rounded-xl transition-all ${active ? "bg-white text-[#005EB8] font-bold shadow-sm" : "text-slate-500 hover:bg-slate-100"}`}>
+    {icon} {!collapsed && <span className="text-sm">{label}</span>}
+  </button>
+);
+
+const StatCard = ({ icon: Icon, label, value }: any) => (
+  <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} whileHover={{ y: -4, boxShadow: "0 10px 25px -5px rgba(0,0,0,0.1)" }} className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 flex items-center gap-5 transition-all">
+    <div className="p-3 rounded-xl bg-slate-100 text-slate-600"><Icon size={24} /></div>
+    <div><h4 className="text-3xl font-extrabold text-slate-800 tracking-tight">{value}</h4><p className="text-slate-500 text-xs font-bold uppercase tracking-wider mt-1">{label}</p></div>
+  </motion.div>
+);
+
+const CourseCard = ({ course, type, navigate, handleFreeEnroll, openEnrollModal }: any) => {
+    // Helper to fix image URL
+    const getImageUrl = (url: string) => {
+        if (!url) return "";
+        return url.startsWith('http') ? url : `${API_BASE_URL.replace('/api/v1', '')}/${url}`;
+    };
+
+    return (
+        <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden hover:-translate-y-1 hover:shadow-lg transition-all">
+            <div className="h-40 bg-slate-200 relative flex items-center justify-center">
+                {course.image_url ? (
+                    <img src={getImageUrl(course.image_url)} alt={course.title} className="w-full h-full object-cover" />
+                ) : (
+                    <BookOpen size={40} className="text-slate-400" />
+                )}
+                {type === "enrolled" && <div className="absolute top-2 right-2 bg-[#87C232] text-white px-2 py-1 rounded-full text-[10px] font-bold">ACTIVE</div>}
+            </div>
+            <div className="p-5">
+                <h4 className="font-bold text-slate-800 mb-4">{course.title}</h4>
+                <div className="flex justify-between items-center">
+                    <span className={`text-lg font-extrabold ${course.price === 0 ? "text-[#87C232]" : "text-[#005EB8]"}`}>{course.price === 0 ? "Free" : `₹${course.price}`}</span>
+                    {type === "available" ? (
+                        <button onClick={() => course.price === 0 ? handleFreeEnroll(course.id) : openEnrollModal(course)} className={`px-4 py-2 rounded-lg text-white font-bold text-sm flex items-center gap-2 ${course.price === 0 ? "bg-[#87C232]" : "bg-[#005EB8]"}`}>
+                            {course.price === 0 ? <Sparkles size={14} /> : <Lock size={14} />} {course.price === 0 ? "Enroll" : "Unlock"}
+                        </button>
+                    ) : (
+                        <button onClick={() => navigate(`/course/${course.id}/player`)} className="bg-slate-800 text-white px-4 py-2 rounded-lg font-bold text-sm flex items-center gap-2"><PlayCircle size={14} /> Resume</button>
+                    )}
+                </div>
+            </div>
+        </div>
+    );
+};
+
+// --- 🔵 MAIN COMPONENT ---
+
 const StudentDashboard = () => {
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState("home"); 
   const [availableCourses, setAvailableCourses] = useState<Course[]>([]);
   const [enrolledCourses, setEnrolledCourses] = useState<Course[]>([]);
-  const [, setLoading] = useState(true);
+  const [loading, setLoading] = useState(true);
   const [currentProgress, setCurrentProgress] = useState({ percent: 0, completed: 0, total: 0 });
   const [collapsed, setCollapsed] = useState(false);
   const [showProfileMenu, setShowProfileMenu] = useState(false);
@@ -74,13 +125,7 @@ const StudentDashboard = () => {
 
   // 🎨 PROFESSIONAL THEME PALETTE
   const brand = { 
-    iqBlue: "#005EB8", 
-    iqGreen: "#87C232", 
-    mainBg: "#E2E8F0",      
-    cardBg: "#F8FAFC",      
-    border: "#cbd5e1",      
-    textMain: "#1e293b", 
-    textLight: "#64748b" 
+    iqBlue: "#005EB8", iqGreen: "#87C232", mainBg: "#E2E8F0", cardBg: "#F8FAFC", border: "#cbd5e1", textMain: "#1e293b", textLight: "#64748b" 
   };
 
   const languages = [
@@ -96,23 +141,63 @@ const StudentDashboard = () => {
     setTimeout(() => setToast(prev => ({ ...prev, show: false })), 3000);
   };
 
+  // ✅ INITIAL FETCH
   useEffect(() => {
     const role = localStorage.getItem("role");
     if (role === "instructor") { navigate("/dashboard"); return; }
-    fetchData();
-    fetchCodeTests();
-  }, [activeTab]);
+    
+    // Prevent fetching if already loading
+    const loadData = async () => {
+        setLoading(true);
+        try {
+            await fetchData();
+            await fetchCodeTests();
+        } catch (e) {
+            console.error(e);
+        } finally {
+            setLoading(false);
+        }
+    };
+    loadData();
+  }, []); // Empty dependency array = Run once on mount
 
   useEffect(() => {
     if (enrolledCourses.length > 0) fetchCourseProgress(enrolledCourses[0].id);
   }, [enrolledCourses]);
 
+  const fetchData = async () => {
+    try {
+      const token = localStorage.getItem("token");
+      const config = { headers: { Authorization: `Bearer ${token}` } };
+      
+      const allRes = await axios.get(`${API_BASE_URL}/courses`, config);
+      const myRes = await axios.get(`${API_BASE_URL}/my-courses`, config);
+      
+      // Safety checks for arrays
+      const allCourses = Array.isArray(allRes.data) ? allRes.data : [];
+      const myCourses = Array.isArray(myRes.data) ? myRes.data : [];
+
+      const myCourseIds = new Set(myCourses.map((c: Course) => c.id));
+      setAvailableCourses(allCourses.filter((c: Course) => !myCourseIds.has(c.id)));
+      setEnrolledCourses(myCourses);
+    } catch (err: any) { 
+        if(err.response?.status === 401) { localStorage.clear(); navigate("/"); }
+    }
+  };
+
+  const fetchCodeTests = async () => {
+      try {
+         const res = await axios.get(`${API_BASE_URL}/code-tests`, { headers: { Authorization: `Bearer ${localStorage.getItem("token")}` } });
+         setCodeTests(Array.isArray(res.data) ? res.data : []);
+      } catch(err) { console.error(err); }
+  };
+
   const fetchCourseProgress = async (courseId: number) => {
     try {
         const token = localStorage.getItem("token");
-       const res = await axios.get(`${API_BASE_URL}/courses/${courseId}/player`, {
-    headers: { Authorization: `Bearer ${token}` }
-});
+        const res = await axios.get(`${API_BASE_URL}/courses/${courseId}/player`, {
+            headers: { Authorization: `Bearer ${token}` }
+        });
         const modules = res.data.modules || [];
         const total = modules.length;
         const completed = modules.filter((m: any) => m.is_completed).length;
@@ -198,34 +283,12 @@ const StudentDashboard = () => {
       }
   }, [activeTest]);
 
-  const fetchData = async () => {
-    setLoading(true);
-    try {
-      const token = localStorage.getItem("token");
-      const config = { headers: { Authorization: `Bearer ${token}` } };
-      const allRes = await axios.get(`${API_BASE_URL}/courses`, config);
-      const myRes = await axios.get(`${API_BASE_URL}/my-courses`, config);
-      const myCourseIds = new Set(myRes.data.map((c: Course) => c.id));
-      setAvailableCourses(allRes.data.filter((c: Course) => !myCourseIds.has(c.id)));
-      setEnrolledCourses(myRes.data);
-    } catch (err: any) { 
-        if(err.response?.status === 401) { localStorage.clear(); navigate("/"); }
-    } finally { setLoading(false); }
-  };
-
-  const fetchCodeTests = async () => {
-      try {
-         const res = await axios.get(`${API_BASE_URL}/code-tests`, { headers: { Authorization: `Bearer ${localStorage.getItem("token")}` } });
-             setCodeTests(res.data);
-      } catch(err) { console.error(err); }
-  };
-
   const handleStartTest = async () => {
       const token = localStorage.getItem("token");
       try {
           if (document.documentElement.requestFullscreen) await document.documentElement.requestFullscreen().catch(() => {});
           const formData = new FormData(); formData.append("pass_key", passKeyInput);
-         const res = await axios.post(`${API_BASE_URL}/code-tests/${showPassKeyModal}/start`, formData, { headers: { Authorization: `Bearer ${token}` } });
+          const res = await axios.post(`${API_BASE_URL}/code-tests/${showPassKeyModal}/start`, formData, { headers: { Authorization: `Bearer ${token}` } });
           const prevWarns = localStorage.getItem(`warns_${res.data.id}`);
           if (prevWarns && parseInt(prevWarns) > 2) { 
               if (document.fullscreenElement) document.exitFullscreen();
@@ -267,9 +330,9 @@ const StudentDashboard = () => {
 
       try { 
           const res = await axios.post(`${API_BASE_URL}/execute`, 
-    { source_code: userCode, language_id: language, stdin: sampleInput }, 
-    { headers: { Authorization: `Bearer ${localStorage.getItem("token")}` } }
-);
+            { source_code: userCode, language_id: language, stdin: sampleInput }, 
+            { headers: { Authorization: `Bearer ${localStorage.getItem("token")}` } }
+          );
           const taskId = res.data.task_id;
           const intervalId = setInterval(async () => {
               try {
@@ -313,8 +376,8 @@ const StudentDashboard = () => {
       if(!activeTest) return; 
       try { 
           await axios.post(`${API_BASE_URL}/code-tests/submit`, { 
-    test_id: activeTest.id, score: disqualified ? 0 : (executionStatus === "success" ? 100 : 40), 
-              problems_solved: Object.keys(solutions).length, time_taken: "Finished" 
+            test_id: activeTest.id, score: disqualified ? 0 : (executionStatus === "success" ? 100 : 40), 
+            problems_solved: Object.keys(solutions).length, time_taken: "Finished" 
           }, { headers: { Authorization: `Bearer ${localStorage.getItem("token")}` } }); 
           setActiveTest(null); localStorage.removeItem(`sols_${activeTest.id}`); 
           if(document.fullscreenElement) document.exitFullscreen(); 
@@ -330,14 +393,12 @@ const StudentDashboard = () => {
       } catch (err) { triggerToast("Enrollment failed.", "error"); } finally { setProcessing(false); }
   };
 
-  // ✅ NEW: HANDLE PAYMENT OR TRIAL
   const handleEnrollStrategy = async (type: "trial" | "paid") => {
       if (!selectedCourse) return;
       setProcessing(true);
 
       try {
           if (type === "trial") {
-              // --- 1. START FREE TRIAL (Direct API Call) ---
              await axios.post(`${API_BASE_URL}/enroll/${selectedCourse.id}`,
                 { type: "trial" }, 
                 { headers: { Authorization: `Bearer ${localStorage.getItem("token")}` } }
@@ -345,12 +406,10 @@ const StudentDashboard = () => {
               triggerToast(`🎉 Free Trial Started for ${selectedCourse.title}!`, "success");
               fetchData(); setShowModal(false); setActiveTab("learning");
           } else {
-              // --- 2. BUY LIFETIME ACCESS (Razorpay) ---
               const isLoaded = await loadRazorpayScript();
               if (!isLoaded) { triggerToast("SDK Failed to load", "error"); return; }
 
               const token = localStorage.getItem("token");
-              // Create Order
               const orderRes = await axios.post(`${API_BASE_URL}/create-order`,
                   { amount: selectedCourse.price }, 
                   { headers: { Authorization: `Bearer ${token}` } }
@@ -364,7 +423,6 @@ const StudentDashboard = () => {
                   description: `Unlock ${selectedCourse.title}`,
                   order_id: orderRes.data.id,
                   handler: async function () {
-                      // Verify Payment & Enroll
                       await axios.post(`${API_BASE_URL}/enroll/${selectedCourse.id}`, 
                           { type: "paid" }, 
                           { headers: { Authorization: `Bearer ${token}` } }
@@ -386,26 +444,22 @@ const StudentDashboard = () => {
       }
   };
   
-  // 🟢 NEW: Secure Certificate Downloader
   const handleDownloadCertificate = async (courseId: number, courseTitle: string) => {
       triggerToast("Downloading certificate...", "success");
       try {
          const response = await axios.get(`${API_BASE_URL}/generate-pdf/${courseId}`, {
-              headers: { Authorization: `Bearer ${localStorage.getItem("token")}` },
-              responseType: 'blob', // Important: Tells Axios this is a file, not text
-          });
+             headers: { Authorization: `Bearer ${localStorage.getItem("token")}` },
+             responseType: 'blob',
+         });
 
-          // Create a hidden download link and click it
-          const url = window.URL.createObjectURL(new Blob([response.data]));
-          const link = document.createElement('a');
-          link.href = url;
-          link.setAttribute('download', `${courseTitle.replace(/\s+/g, '_')}_Certificate.pdf`);
-          document.body.appendChild(link);
-          link.click();
-          
-          // Cleanup
-          link.remove();
-          window.URL.revokeObjectURL(url);
+         const url = window.URL.createObjectURL(new Blob([response.data]));
+         const link = document.createElement('a');
+         link.href = url;
+         link.setAttribute('download', `${courseTitle.replace(/\s+/g, '_')}_Certificate.pdf`);
+         document.body.appendChild(link);
+         link.click();
+         link.remove();
+         window.URL.revokeObjectURL(url);
       } catch (error) {
           console.error("Download error:", error);
           triggerToast("Failed to download certificate. Try again.", "error");
@@ -419,7 +473,6 @@ const StudentDashboard = () => {
   if (activeTest) { 
     return (
       <div className="flex h-screen bg-[#F8FAFC] font-sans overflow-hidden relative">
-        {/* VIOLATION OVERLAY */}
         {isFullScreenViolation && (
             <div className="fixed inset-0 z-[9999] bg-[#0f172a] flex flex-col items-center justify-center text-center">
                 <div className="mb-6"><AlertTriangle size={80} className="text-red-500 mx-auto mb-4" /></div>
@@ -472,58 +525,35 @@ const StudentDashboard = () => {
       </div>
     );
   }
+  
+  // ✅ LOADING SPINNER UI
+  if (loading) {
+      return (
+          <div className="flex h-screen items-center justify-center bg-[#E2E8F0]">
+              <div className="flex flex-col items-center gap-4">
+                  <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#005EB8]"></div>
+                  <p className="text-slate-500 font-bold animate-pulse">Loading iQmath Dashboard...</p>
+              </div>
+          </div>
+      );
+  }
 
   // --- DASHBOARD UI ---
-  const SidebarItem = ({ icon, label, active, onClick }: any) => (
-    <button onClick={onClick} className={`flex items-center gap-3 w-full p-3 rounded-xl transition-all ${active ? "bg-white text-[#005EB8] font-bold shadow-sm" : "text-slate-500 hover:bg-slate-100"}`}>
-      {icon} {!collapsed && <span className="text-sm">{label}</span>}
-    </button>
-  );
-
-  const CourseCard = ({ course, type }: { course: Course, type: "enrolled" | "available" }) => (
-    <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden hover:-translate-y-1 hover:shadow-lg transition-all">
-        <div className="h-40 bg-slate-200 relative flex items-center justify-center">
-            {course.image_url ? (<img src={course.image_url.startsWith('http') ? course.image_url : `${API_BASE_URL.replace('/api/v1', '')}/${course.image_url}`} alt={course.title} className="w-full h-full object-cover" />) : (<BookOpen size={40} className="text-slate-400" />)}
-            {type === "enrolled" && <div className="absolute top-2 right-2 bg-[#87C232] text-white px-2 py-1 rounded-full text-[10px] font-bold">ACTIVE</div>}
-        </div>
-        <div className="p-5">
-            <h4 className="font-bold text-slate-800 mb-4">{course.title}</h4>
-            <div className="flex justify-between items-center">
-                <span className={`text-lg font-extrabold ${course.price === 0 ? "text-[#87C232]" : "text-[#005EB8]"}`}>{course.price === 0 ? "Free" : `₹${course.price}`}</span>
-                {type === "available" ? (
-                    <button onClick={() => course.price === 0 ? handleFreeEnroll(course.id) : openEnrollModal(course)} className={`px-4 py-2 rounded-lg text-white font-bold text-sm flex items-center gap-2 ${course.price === 0 ? "bg-[#87C232]" : "bg-[#005EB8]"}`}>
-                        {course.price === 0 ? <Sparkles size={14} /> : <Lock size={14} />} {course.price === 0 ? "Enroll" : "Unlock"}
-                    </button>
-                ) : (
-                    <button onClick={() => navigate(`/course/${course.id}/player`)} className="bg-slate-800 text-white px-4 py-2 rounded-lg font-bold text-sm flex items-center gap-2"><PlayCircle size={14} /> Resume</button>
-                )}
-            </div>
-        </div>
-    </div>
-  );
-
-  const StatCard = ({ icon: Icon, label, value }: any) => (
-    <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} whileHover={{ y: -4, boxShadow: "0 10px 25px -5px rgba(0,0,0,0.1)" }} className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 flex items-center gap-5 transition-all">
-      <div className="p-3 rounded-xl bg-slate-100 text-slate-600"><Icon size={24} /></div>
-      <div><h4 className="text-3xl font-extrabold text-slate-800 tracking-tight">{value}</h4><p className="text-slate-500 text-xs font-bold uppercase tracking-wider mt-1">{label}</p></div>
-    </motion.div>
-  );
-
   return (
     <div className="flex h-screen bg-[#E2E8F0] font-sans">
       <aside className={`bg-[#F8FAFC] border-r border-slate-200 p-6 flex flex-col fixed h-full z-50 transition-all ${collapsed ? "w-20" : "w-64"}`}>
         <div className="mb-10 flex items-center justify-between">{!collapsed && <span className="text-xl font-extrabold text-[#005EB8]">iQmath<span className="text-[#87C232]">Pro</span></span>}<button onClick={() => setCollapsed(!collapsed)}><Menu size={24} className="text-slate-600" /></button></div>
         <nav className="flex flex-col gap-2 flex-1">
-          <SidebarItem icon={<LayoutDashboard size={20} />} label="Home" active={activeTab === "home"} onClick={() => setActiveTab("home")} />
-          <SidebarItem icon={<BookOpen size={20} />} label="My Learning" active={activeTab === "learning"} onClick={() => setActiveTab("learning")} />
-          <SidebarItem icon={<Code size={20} />} label="Code Test" active={activeTab === "test"} onClick={() => setActiveTab("test")} />
-          <SidebarItem icon={<Compass size={20} />} label="Explore Courses" active={activeTab === "explore"} onClick={() => setActiveTab("explore")} />
-          <SidebarItem icon={<Award size={20} />} label="My Certificates" active={activeTab === "certificates"} onClick={() => setActiveTab("certificates")} />
+          <SidebarItem icon={<LayoutDashboard size={20} />} label="Home" active={activeTab === "home"} onClick={() => setActiveTab("home")} collapsed={collapsed} />
+          <SidebarItem icon={<BookOpen size={20} />} label="My Learning" active={activeTab === "learning"} onClick={() => setActiveTab("learning")} collapsed={collapsed} />
+          <SidebarItem icon={<Code size={20} />} label="Code Test" active={activeTab === "test"} onClick={() => setActiveTab("test")} collapsed={collapsed} />
+          <SidebarItem icon={<Compass size={20} />} label="Explore Courses" active={activeTab === "explore"} onClick={() => setActiveTab("explore")} collapsed={collapsed} />
+          <SidebarItem icon={<Award size={20} />} label="My Certificates" active={activeTab === "certificates"} onClick={() => setActiveTab("certificates")} collapsed={collapsed} />
         </nav>
         <button onClick={handleLogout} className="flex items-center gap-3 w-full p-3 rounded-xl text-red-500 hover:bg-red-50 font-bold mt-auto transition-all"><LogOut size={20} /> {!collapsed && "Sign Out"}</button>
       </aside>
 
-      <main className={`ml-${collapsed ? "20" : "64"} flex-1 p-10 transition-all ml-64`}>
+      <main className={`flex-1 p-10 transition-all ${collapsed ? "ml-20" : "ml-64"}`}>
         <header className="flex justify-between items-center mb-8">
           <h2 className="text-2xl font-extrabold text-slate-800">{activeTab === "test" ? "Active Challenges" : "Dashboard Overview"}</h2>
           <button onClick={() => setShowProfileMenu(!showProfileMenu)} className="w-10 h-10 rounded-full bg-[#005EB8] text-white flex items-center justify-center"><User size={20} /></button>
@@ -532,7 +562,11 @@ const StudentDashboard = () => {
         {activeTab === "home" && (
             <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6 }} className="flex flex-col gap-8">
                 <div><h1 className="text-3xl font-extrabold text-slate-800 mb-2">Welcome back, Student! 👋</h1><p className="text-slate-500 font-medium flex items-center gap-2"><Sparkles size={16} className="text-yellow-500" /> You're on a <span className="text-slate-800 font-bold">5-day learning streak</span>. Keep it up!</p></div>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6"><StatCard icon={BookOpen} label="Courses Enrolled" value={enrolledCourses.length} /><StatCard icon={Award} label="Certificates Earned" value={0} /><StatCard icon={Trophy} label="Challenges Attended" value={codeTests.filter(t => t.completed).length} /></div>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    <StatCard icon={BookOpen} label="Courses Enrolled" value={enrolledCourses.length} />
+                    <StatCard icon={Award} label="Certificates Earned" value={0} />
+                    <StatCard icon={Trophy} label="Challenges Attended" value={codeTests.filter(t => t.completed).length} />
+                </div>
                 {enrolledCourses.length > 0 ? (
                     <motion.div whileHover={{ y: -5 }} className="bg-gradient-to-r from-[#005EB8] to-[#004080] rounded-2xl p-8 text-white shadow-xl relative overflow-hidden"> 
                         <div className="relative z-10 w-full max-w-lg"> 
@@ -547,8 +581,10 @@ const StudentDashboard = () => {
             </motion.div>
         )}
 
-        {activeTab === "learning" && <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">{enrolledCourses.map(c => <CourseCard key={c.id} course={c} type="enrolled" />)}</div>}
-        {activeTab === "explore" && <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">{availableCourses.map(c => <CourseCard key={c.id} course={c} type="available" />)}</div>}
+        {activeTab === "learning" && <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">{enrolledCourses.map(c => <CourseCard key={c.id} course={c} type="enrolled" navigate={navigate} />)}</div>}
+        
+        {activeTab === "explore" && <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">{availableCourses.map(c => <CourseCard key={c.id} course={c} type="available" handleFreeEnroll={handleFreeEnroll} openEnrollModal={openEnrollModal} />)}</div>}
+        
         {activeTab === "test" && ( <div className="grid gap-5"> {codeTests.map(test => ( <div key={test.id} className="bg-white p-6 rounded-xl border border-slate-200 flex justify-between items-center"> <div><h3 className="text-lg font-bold text-slate-800">{test.title}</h3><p className="text-slate-500 text-sm">Duration: {test.time_limit} Mins</p></div> <button onClick={() => setShowPassKeyModal(test.id)} className="bg-[#005EB8] text-white px-6 py-2 rounded-lg font-bold">Start Test</button> </div> ))} </div> )}
         
         {/* 🎓 CERTIFICATES TAB (Added) */}
