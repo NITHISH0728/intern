@@ -74,6 +74,8 @@ const CourseCard = ({ course, type, navigate, handleFreeEnroll, openEnrollModal 
   );
 };
 
+// --- 🔵 MAIN DASHBOARD COMPONENT ---
+
 const StudentDashboard = () => {
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState("home"); 
@@ -100,8 +102,6 @@ const StudentDashboard = () => {
   const [faceStatus, setFaceStatus] = useState<"ok" | "missing" | "multiple">("ok");
   const [isFullScreenViolation, setIsFullScreenViolation] = useState(false);
   
-  const [currentProblemIndex] = useState(0);
-  const [solutions] = useState<{[key: number]: string}>({});
   const [userCode, setUserCode] = useState("");
   const [language, setLanguage] = useState(71); 
   
@@ -234,7 +234,7 @@ const StudentDashboard = () => {
 
   const handleRun = async () => { 
       setExecutionStatus("running"); 
-      const currentProb = activeTest?.problems[currentProblemIndex]; 
+      const currentProb = activeTest?.problems[0]; 
       let sampleInput = "5", expectedOutput = "";
       try { 
           const cases = JSON.parse(currentProb?.test_cases || "[]");
@@ -338,11 +338,11 @@ const StudentDashboard = () => {
                 <span className="bg-yellow-100 text-yellow-700 text-[10px] font-bold px-2 py-1 rounded">PROCTORING ACTIVE</span>
             </div>
             <div className="flex-1 overflow-y-auto p-6">
-                 <p className="text-slate-500 mb-4 text-sm italic">{activeTest.problems[currentProblemIndex]?.description || "Read carefully."}</p>
+                 <p className="text-slate-500 mb-4 text-sm italic">{activeTest.problems[0]?.description || "Read carefully."}</p>
                  <div className="space-y-2">
                     {(() => {
                         try {
-                            return JSON.parse(activeTest.problems[currentProblemIndex]?.test_cases || "[]").map((tc: any, i: number) => (
+                            return JSON.parse(activeTest.problems[0]?.test_cases || "[]").map((tc: any, i: number) => (
                                 <div key={i} className="bg-slate-50 border p-3 rounded text-[12px] font-mono"><span className="text-slate-400">Input:</span> {tc.input}</div>
                             ));
                         } catch(e) { return null; }
