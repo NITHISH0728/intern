@@ -547,35 +547,33 @@ const CoursePlayer = () => {
     const token = localStorage.getItem("token");
 
     try {
-        const ticketRes = await axios.post(`${API_BASE_URL}/get-upload-url`, {
-    lesson_title: activeLesson.title,
-    file_name: assignmentFile.name,
-    file_type: assignmentFile.type
-}, { headers: { "Authorization": `Bearer ${token}` } });
+        // 1. Create FormData to send file + data together
+        const formData = new FormData();
+        formData.append("file", assignmentFile);           // The file object
+        formData.append("lesson_title", activeLesson.title); // The lesson title (Required by backend)
 
-        const uploadUrl = ticketRes.data.upload_url;
-
-        await axios.put(uploadUrl, assignmentFile, {
-            headers: { "Content-Type": assignmentFile.type },
+        // 2. Send directly to your backend endpoint
+        // NOTE: No need for '/get-upload-url' or '/confirm-submission' anymore
+        await axios.post(`${API_BASE_URL}/submit-assignment`, formData, {
+            headers: { 
+                "Authorization": `Bearer ${token}`,
+                // Axios automatically sets Content-Type to multipart/form-data when it sees FormData
+            },
             onUploadProgress: (progressEvent) => {
                 if (progressEvent.total) {
                     const percent = Math.round((progressEvent.loaded * 100) / progressEvent.total);
-                    console.log(`Uploading to Drive: ${percent}%`);
+                    console.log(`Uploading: ${percent}%`);
                 }
             }
         });
         
-        await axios.post(`${API_BASE_URL}/confirm-submission`, {
-    lesson_title: activeLesson.title,
-    file_name: assignmentFile.name
-}, { headers: { "Authorization": `Bearer ${token}` } });
-
-        triggerToast(`✅ Assignment "${assignmentFile.name}" Submitted Successfully!`, "success"); // ✅ Replaced Alert
+        // 3. Success Handling
+        triggerToast(`✅ Assignment "${assignmentFile.name}" Submitted Successfully!`, "success");
         setAssignmentFile(null); 
 
     } catch (err) {
-        console.error(err);
-        triggerToast("❌ Upload Failed. Please try again.", "error"); // ✅ Replaced Alert
+        console.error("Upload Error:", err);
+        triggerToast("❌ Upload Failed. Please try again.", "error");
     } finally {
         setUploading(false);
     }

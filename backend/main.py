@@ -50,6 +50,17 @@ from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseUpload
 
+
+if os.getenv("TOKEN_JSON_CONTENT"):
+    print("📝 Creating token.json from Environment Variable...")
+    with open("token.json", "w") as f:
+        f.write(os.getenv("TOKEN_JSON_CONTENT"))
+
+if os.getenv("CREDENTIALS_JSON_CONTENT"):
+    print("📝 Creating credentials.json from Environment Variable...")
+    with open("credentials.json", "w") as f:
+        f.write(os.getenv("CREDENTIALS_JSON_CONTENT"))
+        
 # Load environment variables
 load_dotenv()
 
