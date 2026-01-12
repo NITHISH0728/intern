@@ -8,7 +8,8 @@ import API_BASE_URL from './config';
 import { 
   PlayCircle, FileText, ChevronLeft, Menu, Code, HelpCircle, 
   UploadCloud, Play, Save, Monitor, Cpu, ChevronDown, ChevronRight, CreditCard,
-  File as FileIcon, X, CheckCircle, Radio, Lock, ArrowLeft, AlertCircle
+  File as FileIcon, X, CheckCircle, Radio, Lock, ArrowLeft, AlertCircle,Clock, 
+  Zap
 } from "lucide-react";
 
 
@@ -209,6 +210,8 @@ const CodeCompiler = ({ lesson }: { lesson: any }) => {
     </div>
   );
 };
+
+
 
 // --- 🆕 COMPONENT: CODING COURSE PLAYER ---
 const CodingPlayer = ({ course, token }: { course: any, token: string }) => {
@@ -519,6 +522,204 @@ const DelayedVideoPlayer = ({ lesson, plyrOptions }: { lesson: any, plyrOptions:
     );
 };
 
+// --- 🕵️ PROCTORING COMPONENT (FIXED & TESTED) ---
+// --- 🕵️ PROCTORING COMPONENT (FIXED) ---
+const LiveTestProctor = ({ lesson }: { lesson: any }) => {
+    // States: checking -> early_long -> early_countdown -> ready -> rules -> active -> completed
+    const [status, setStatus] = useState("checking"); 
+    const [timeLeft, setTimeLeft] = useState("");
+    const [violationCount, setViolationCount] = useState(0);
+    const [isFullscreen, setIsFullscreen] = useState(false);
+
+    // 1. TIMER LOGIC (Fixed Stale Closure Bug)
+    useEffect(() => {
+        // 🛑 STOP the timer if we are already in the test, terminated, or done.
+        // This prevents the "Kick-out" bug where the timer resets the page.
+        if (status === "active" || status === "terminated" || status === "completed" || status === "rules") return;
+
+        const checkTime = () => {
+            const now = new Date();
+            const start = new Date(lesson.start_time);
+            const end = new Date(lesson.end_time);
+
+            if (now > end) {
+                setStatus("completed");
+                return;
+            }
+
+            if (now < start) {
+                const diff = start.getTime() - now.getTime();
+                const minutes = Math.floor(diff / 60000);
+                const seconds = Math.floor((diff % 60000) / 1000);
+                
+                // Show "Long Wait" if > 5 mins, else show "Countdown"
+                if (diff > 5 * 60 * 1000) {
+                    setStatus("early_long");
+                } else {
+                    setStatus("early_countdown");
+                    setTimeLeft(`${minutes}m ${seconds}s`);
+                }
+            } else {
+                // Time has arrived! Move to "Ready" page (The Start Button)
+                setStatus("ready");
+            }
+        };
+
+        checkTime(); // Run immediately
+        const interval = setInterval(checkTime, 1000);
+        return () => clearInterval(interval);
+    }, [lesson, status]); // ✅ Dependency 'status' ensures logic is always fresh
+
+    // 2. Report Violation
+    const reportViolation = async () => {
+        try {
+            const token = localStorage.getItem("token");
+            const res = await axios.post(`${API_BASE_URL}/proctoring/violation`, 
+                { lesson_id: lesson.id }, 
+                { headers: { Authorization: `Bearer ${token}` } }
+            );
+            
+            setViolationCount(res.data.violation_count);
+            
+            if (res.data.status === "terminated") {
+                setStatus("terminated");
+                document.exitFullscreen().catch(() => {});
+            } else {
+                alert(`⚠️ WARNING: Tab Switch/Fullscreen Exit Detected!\nViolations: ${res.data.violation_count}/3\nIf you reach 3, you will be terminated.`);
+            }
+        } catch (err) { console.error("Violation Report Failed:", err); } 
+    };
+
+    // 3. Event Listeners
+    useEffect(() => {
+        if (status !== "active") return;
+
+        const handleVisibilityChange = () => { if (document.hidden) reportViolation(); };
+        const handleFullscreenChange = () => {
+            if (!document.fullscreenElement) {
+                setIsFullscreen(false);
+                reportViolation();
+            } else {
+                setIsFullscreen(true);
+            }
+        };
+
+        document.addEventListener("visibilitychange", handleVisibilityChange);
+        document.addEventListener("fullscreenchange", handleFullscreenChange);
+
+        return () => {
+            document.removeEventListener("visibilitychange", handleVisibilityChange);
+            document.removeEventListener("fullscreenchange", handleFullscreenChange);
+        };
+    }, [status]);
+
+    const startTest = () => {
+        const elem = document.documentElement;
+        if (elem.requestFullscreen) {
+            elem.requestFullscreen().then(() => {
+                setStatus("active");
+                setIsFullscreen(true);
+            }).catch(() => alert("Fullscreen required to start test."));
+        }
+    };
+
+    // --- RENDER VIEWS ---
+
+    // VIEW 1: Test is in the future (> 5 mins)
+    if (status === "early_long") {
+        return (
+            <div className="flex flex-col items-center justify-center h-full bg-slate-50 text-slate-800 p-10 text-center">
+                <Clock size={64} className="text-[#005EB8] mb-4" />
+                <h2 className="text-2xl font-bold mb-2">Upcoming Live Test</h2>
+                <p className="text-slate-500">This test is scheduled for:</p>
+                <div className="text-xl font-bold mt-2 text-[#005EB8]">
+                    {new Date(lesson.start_time).toLocaleString()}
+                </div>
+            </div>
+        );
+    }
+
+    // VIEW 2: Countdown (< 5 mins)
+    if (status === "early_countdown") {
+        return (
+            <div className="flex flex-col items-center justify-center h-full bg-slate-900 text-white p-10 text-center">
+                <Clock size={64} className="text-yellow-400 mb-4 animate-pulse" />
+                <h2 className="text-3xl font-bold mb-2">Test Starting Soon</h2>
+                <div className="text-6xl font-mono font-bold text-yellow-400 mt-6">{timeLeft}</div>
+                <p className="text-slate-400 mt-4">Please stay on this page.</p>
+            </div>
+        );
+    }
+
+    // VIEW 3: Ready (Time Reached - The "Missing Page")
+    if (status === "ready") {
+        return (
+            <div className="flex flex-col items-center justify-center h-full bg-green-50 text-slate-900 p-10 text-center">
+                <Zap size={64} className="text-green-600 mb-4" />
+                <h2 className="text-3xl font-bold mb-4">The Test is Live!</h2>
+                <p className="text-slate-600 mb-8 max-w-md">You are about to enter a proctored environment. Please ensure you have a stable internet connection.</p>
+                <button onClick={() => setStatus("rules")} className="bg-green-600 text-white px-8 py-4 rounded-xl font-bold text-xl shadow-lg hover:bg-green-700 transition-all">
+                    Proceed to Exam Hall
+                </button>
+            </div>
+        );
+    }
+
+    // VIEW 4: Terminated
+    if (status === "terminated") {
+        return (
+            <div className="flex flex-col items-center justify-center h-full bg-red-900 text-white p-10 text-center">
+                <AlertCircle size={80} className="text-white mb-6" />
+                <h1 className="text-4xl font-bold mb-4">TERMINATED</h1>
+                <p className="text-xl">Multiple proctoring violations detected.</p>
+            </div>
+        );
+    }
+
+    // VIEW 5: Rules Page (Covers Screen)
+    if (status === "rules") {
+        return (
+            <div className="fixed inset-0 z-[9999] flex flex-col items-center justify-center bg-white p-10">
+                <div className="max-w-3xl w-full text-center">
+                    <h1 className="text-3xl font-bold text-slate-900 mb-6">⚠️ Exam Rules</h1>
+                    <ul className="text-left space-y-4 text-slate-700 bg-slate-50 p-6 rounded-xl border border-slate-200 mb-8">
+                        <li className="flex items-start gap-3"><span className="bg-red-100 text-red-700 font-bold px-2 rounded">1</span> Fullscreen is mandatory.</li>
+                        <li className="flex items-start gap-3"><span className="bg-red-100 text-red-700 font-bold px-2 rounded">2</span> No tab switching allowed.</li>
+                        <li className="flex items-start gap-3"><span className="bg-red-100 text-red-700 font-bold px-2 rounded">3</span> <strong>3 Violations = Termination.</strong></li>
+                    </ul>
+                    <button onClick={startTest} className="bg-[#005EB8] text-white px-8 py-4 rounded-xl font-bold text-xl shadow-lg hover:scale-105 flex items-center gap-2 mx-auto transition-all">
+                        <Zap size={24} /> I Agree & Start Test
+                    </button>
+                </div>
+            </div>
+        );
+    }
+
+    // VIEW 6: Active Test (Fullscreen)
+    if (status === "active") {
+        return (
+            <div className="fixed inset-0 z-[9999] w-screen h-screen bg-black flex flex-col">
+                {!isFullscreen && (
+                     <div className="absolute inset-0 z-[10000] bg-black/95 flex flex-col items-center justify-center text-white">
+                        <AlertCircle size={64} className="text-red-500 mb-4" />
+                        <h2 className="text-2xl font-bold text-red-400 mb-2">TEST INTERRUPTED</h2>
+                        <p className="text-lg text-slate-300">Return to fullscreen immediately.</p>
+                        <div className="mt-6 font-mono font-bold text-xl text-white">Warnings Left: {3 - violationCount}</div>
+                        <button onClick={startTest} className="mt-6 bg-[#ff4d4d] hover:bg-red-600 text-black px-8 py-3 rounded-lg font-bold">RETURN TO FULL SCREEN</button>
+                     </div>
+                )}
+                <div className="h-12 bg-slate-900 border-b border-slate-700 flex justify-between items-center px-6 text-white select-none">
+                    <span className="font-bold text-slate-300">{lesson.title}</span>
+                    <div className="flex items-center gap-2 text-red-400 font-mono font-bold animate-pulse"><Radio size={16} /> LIVE PROCTORING</div>
+                </div>
+                <iframe src={lesson.url} className="flex-1 w-full border-none bg-white" sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-modals" />
+            </div>
+        );
+    }
+    
+    return <div className="p-10 text-center">Loading Test Status...</div>;
+};
+
 // --- MAIN PLAYER COMPONENT (UNTOUCHED) ---
 const CoursePlayer = () => {
   const { courseId } = useParams();
@@ -703,6 +904,10 @@ const renderContent = () => {
     );
 }
     
+    if (activeLesson.type === "live_test") {
+    return <LiveTestProctor lesson={activeLesson} />; 
+
+}
     if (activeLesson.type === "code_test") return <CodeCompiler lesson={activeLesson} />;
     
     if (activeLesson.type === "assignment") {

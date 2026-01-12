@@ -57,6 +57,10 @@ class ContentItem(Base):
     instructions = Column(Text, nullable=True) 
     test_config = Column(Text, nullable=True) 
     
+    # ✅ NEW FIELDS FOR LIVE TEST SCHEDULING
+    start_time = Column(DateTime, nullable=True) # e.g., 2023-10-27 20:00:00
+    end_time = Column(DateTime, nullable=True)   # e.g., 2023-10-27 20:30:00
+
     module = relationship("Module", back_populates="items")
 
 class Enrollment(Base):
@@ -167,7 +171,11 @@ class LessonProgress(Base):
     content_item_id = Column(Integer, ForeignKey("content_items.id"))
     is_completed = Column(Boolean, default=True)
     completed_at = Column(DateTime, default=datetime.utcnow)
-
+    
+    # ✅ NEW FIELDS FOR PROCTORING
+    violation_count = Column(Integer, default=0) # Tracks tab switches
+    is_terminated = Column(Boolean, default=False) # True if kicked out
+    
     user = relationship("User")
     content_item = relationship("ContentItem")
 

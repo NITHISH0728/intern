@@ -111,7 +111,13 @@ class ModuleCreate(BaseModel):
 class ContentCreate(BaseModel):
     title: str; type: str; data_url: Optional[str] = None; duration: Optional[int] = None; 
     is_mandatory: bool = False; instructions: Optional[str] = None; test_config: Optional[str] = None; module_id: int
+    # ✅ NEW
+    start_time: Optional[datetime] = None
+    end_time: Optional[datetime] = None
 
+class ViolationReport(BaseModel):
+    lesson_id: int
+    
 class StatusUpdate(BaseModel):
     status: str 
 
@@ -567,7 +573,20 @@ async def get_modules(course_id: int, db: AsyncSession = Depends(get_db)):
 
 @app.post("/api/v1/content")
 async def add_content(content: ContentCreate, db: AsyncSession = Depends(get_db), current_user: models.User = Depends(require_instructor)):
-    new_content = models.ContentItem(title=content.title, type=content.type, content=content.data_url, order=0, module_id=content.module_id, duration=content.duration, is_mandatory=content.is_mandatory, instructions=content.instructions, test_config=content.test_config)
+    new_content = models.ContentItem(
+        title=content.title, 
+        type=content.type, 
+        content=content.data_url, 
+        order=0, 
+        module_id=content.module_id, 
+        duration=content.duration, 
+        is_mandatory=content.is_mandatory, 
+        instructions=content.instructions, 
+        test_config=content.test_config,
+        # ✅ Save Times
+        start_time=content.start_time,
+        end_time=content.end_time
+    )
     db.add(new_content)
     await db.commit()
     return {"message": "Content added"}
@@ -1022,6 +1041,34 @@ async def login_otp(req: OTPLoginRequest, db: AsyncSession = Depends(get_db)):
     # we trust the request and issue a JWT
     token = create_access_token(data={"sub": user.email, "role": user.role})
     return {"access_token": token, "token_type": "bearer", "role": user.role}
+
+@app.post("/api/v1/proctoring/violation")
+async def record_violation(report: ViolationReport, db: AsyncSession = Depends(get_db), current_user: models.User = Depends(require_student)):
+    # Find existing progress or create new
+    res = await db.execute(select(models.LessonProgress).where(models.LessonProgress.user_id == current_user.id, models.LessonProgress.content_item_id == report.lesson_id))
+    progress = res.scalars().first()
+    
+    if not progress:
+        progress = models.LessonProgress(user_id=current_user.id, content_item_id=report.lesson_id, is_completed=False, violation_count=1)
+        db.add(progress)
+    else:
+        if progress.is_terminated:
+            return {"status": "terminated", "message": "Already terminated"}
+            
+        progress.violation_count += 1
+        
+        # TERMINATION LOGIC (More than 2 violations = 3 strikes)
+        if progress.violation_count > 2:
+            progress.is_terminated = True
+            progress.is_completed = False # Fail the test
+            
+    await db.commit()
+    
+    return {
+        "status": "terminated" if progress.is_terminated else "warning", 
+        "violation_count": progress.violation_count,
+        "remaining_attempts": 3 - progress.violation_count
+    }
     
 @app.get("/")
 def read_root(): return {"status": "online", "message": "iQmath Military Grade API Active 🟢"}

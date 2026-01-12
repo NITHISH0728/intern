@@ -46,7 +46,8 @@ const CourseBuilder = () => {
   const [itemInstructions, setItemInstructions] = useState("");
   const [duration, setDuration] = useState(""); 
   const [isMandatory, setIsMandatory] = useState(false);
-  
+  const [startTime, setStartTime] = useState(""); 
+  const [endTime, setEndTime] = useState("");
   // ✅ FIX: State for Array of Problems (Up to 3)
   const [problems, setProblems] = useState<CodeProblem[]>([
     { title: "", description: "", difficulty: "Easy", testCases: [{ input: "", output: "" }] }
@@ -187,12 +188,15 @@ const CourseBuilder = () => {
     // --- REGULAR ITEM LOGIC ---
     const payload: any = {
       title: itemTitle,
-      type: typeKey,
+      type: typeKey, // "live_test"
       data_url: itemUrl,
       duration: duration ? parseInt(duration) : null,
       is_mandatory: isMandatory,
       instructions: itemInstructions,
-      module_id: selectedModuleId
+      module_id: selectedModuleId,
+      // ✅ ADD THESE: Send times only if they exist
+      start_time: startTime || null, 
+      end_time: endTime || null 
     };
 
     // ✅ FIX: Package multiple problems into one JSON string
@@ -213,7 +217,12 @@ const CourseBuilder = () => {
   };
 
   const resetForm = () => {
-    setItemTitle(""); setItemUrl(""); setItemInstructions(""); setDuration(""); setIsMandatory(false);
+    setItemTitle(""); setItemUrl(""); setItemInstructions(""); 
+    setDuration(""); setIsMandatory(false);
+    
+    // ✅ ADD THESE:
+    setStartTime(""); setEndTime("");
+
     setProblems([{ title: "", description: "", difficulty: "Easy", testCases: [{ input: "", output: "" }] }]);
     setActiveProblemIndex(0);
   };
@@ -517,7 +526,40 @@ const CourseBuilder = () => {
         : "YouTube / Google Form / App Script Link"} 
     </label><div style={{ position: "relative" }}><Link size={18} style={{ position: "absolute", left: "14px", top: "14px", color: brand.textLight }} /><input value={itemUrl} onChange={(e) => setItemUrl(e.target.value)} placeholder="https://..." style={{ ...inputStyle, paddingLeft: "45px" }} /></div></div>
                         {activeModal === "Assignment" && (<div style={{ display: "flex", alignItems: "center", gap: "10px", marginTop: "5px" }}><input type="checkbox" id="mandatoryCheck" checked={isMandatory} onChange={(e) => setIsMandatory(e.target.checked)} style={{ width: "18px", height: "18px", cursor: "pointer" }} /><label htmlFor="mandatoryCheck" style={{ fontSize: "14px", color: "#475569", fontWeight: "600", cursor: "pointer" }}>Mark as Mandatory</label></div>)}
-                        {activeModal === "Live Test" && (<div><label style={labelStyle}>Test Duration (Minutes)</label><div style={{ position: "relative" }}><Clock size={18} style={{ position: "absolute", left: "14px", top: "14px", color: brand.textLight }} /><input type="number" value={duration} onChange={(e) => setDuration(e.target.value)} placeholder="60" style={{ ...inputStyle, paddingLeft: "45px" }} /></div></div>)}
+                      {activeModal === "Live Test" && (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+        {/* ❌ DELETED DUPLICATE TITLE INPUT */}
+        {/* ❌ DELETED DUPLICATE URL INPUT */}
+
+        {/* ✅ ONLY KEEP THE TIME INPUTS */}
+        <div style={{ display: 'flex', gap: '15px' }}>
+             <div style={{ flex: 1 }}>
+                <label style={labelStyle}>Start Time</label>
+                <div style={{ position: "relative" }}>
+                    <Clock size={18} style={{ position: "absolute", left: "14px", top: "14px", color: brand.textLight }} />
+                    <input 
+                        type="datetime-local" 
+                        value={startTime} 
+                        onChange={(e) => setStartTime(e.target.value)} 
+                        style={{ ...inputStyle, paddingLeft: "45px" }} 
+                    />
+                </div>
+             </div>
+             <div style={{ flex: 1 }}>
+                <label style={labelStyle}>End Time</label>
+                <div style={{ position: "relative" }}>
+                    <Clock size={18} style={{ position: "absolute", left: "14px", top: "14px", color: brand.textLight }} />
+                    <input 
+                        type="datetime-local" 
+                        value={endTime} 
+                        onChange={(e) => setEndTime(e.target.value)} 
+                        style={{ ...inputStyle, paddingLeft: "45px" }} 
+                    />
+                </div>
+             </div>
+        </div>
+    </div>
+)}
                         </>
                     )}
                 </div>
