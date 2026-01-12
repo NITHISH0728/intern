@@ -1,127 +1,96 @@
 # worker.py
-import subprocess
 import os
-import uuid
-import sys
-import tempfile # 👈 Added tempfile for safe cloud file creation
-import shutil   # 👈 Added for safer file cleanup
+import requests
+import base64
 from celery_config import celery_app
 from dotenv import load_dotenv
 
 load_dotenv()
 
-# Map your Frontend Language IDs to terminal commands
-# 71: Python, 63: Node.js, 54: C++, 62: Java
-LANGUAGE_CONFIG = {
-    71: {
-        "extension": ".py",
-        # 🟢 FIX: Use sys.executable. 
-        # This forces the worker to use the currently running Python (e.g., inside your venv)
-        "command": [sys.executable] 
-    },
-    63: {
-        "extension": ".js",
-        "command": ["node"]
-    },
-    54: {
-        "extension": ".cpp",
-        "compile": ["g++", "-o"], # logic slightly adjusted below
-        "run": []
-    }
-}
+# ✅ 1. LOAD CONFIGURATION FROM YOUR ENV
+# We use the exact names from your .env file
+API_KEY = os.getenv("JUDGE0_API_KEY")
+API_HOST = os.getenv("JUDGE0_API_HOST", "judge0-ce.p.rapidapi.com")
+
+# --- Helper Functions for Base64 (Required by Judge0) ---
+def encode_b64(text):
+    if not text: return ""
+    return base64.b64encode(text.encode('utf-8')).decode('utf-8')
+
+def decode_b64(text):
+    if not text: return ""
+    try:
+        return base64.b64decode(text).decode('utf-8')
+    except:
+        return text
 
 @celery_app.task(name="worker.run_code_task", bind=True)
 def run_code_task(self, source_code, language_id, stdin):
     """
-    Executes code locally using subprocess.
+    Executes code remotely using Judge0 API (via RapidAPI).
+    This keeps your server CPU load near 0% and prevents crashes.
     """
     
     # 1. Validation
-    if language_id not in LANGUAGE_CONFIG:
-        return {"status": "error", "output": "Language not supported yet."}
+    if not API_KEY:
+        return {"status": "error", "output": "Server Config Error: JUDGE0_API_KEY is missing."}
+
+    url = f"https://{API_HOST}/submissions"
+
+    # 2. Prepare the Request
+    # We use base64_encoded=true to handle special characters safely
+    querystring = {"base64_encoded": "true", "wait": "true"}
     
-    config = LANGUAGE_CONFIG[language_id]
+    payload = {
+        "source_code": encode_b64(source_code),
+        "language_id": language_id,
+        "stdin": encode_b64(stdin)
+    }
     
-    # 2. Create a temporary file safely
-    # This finds the correct 'temp' folder for the OS (Windows or Linux/Render)
-    temp_dir = tempfile.gettempdir()
-    unique_id = str(uuid.uuid4())
-    filename = os.path.join(temp_dir, f"temp_{unique_id}{config['extension']}")
-    
-    # Output binary path (for C++)
-    binary_name = os.path.join(temp_dir, f"output_{unique_id}")
-    if os.name == 'nt': binary_name += ".exe"
+    headers = {
+        "content-type": "application/json",
+        "Content-Type": "application/json",
+        "X-RapidAPI-Key": API_KEY,
+        "X-RapidAPI-Host": API_HOST
+    }
 
     try:
-        # Write code to disk
-        with open(filename, "w", encoding="utf-8") as f:
-            f.write(source_code)
-            
-        # 3. Execution Logic
+        # 3. Send Code to Judge0 Cloud
+        response = requests.post(url, json=payload, headers=headers, params=querystring, timeout=10)
+        
+        # 4. Handle Network/API Errors
+        if response.status_code not in [200, 201]:
+            return {"status": "error", "output": f"Judge0 API Error ({response.status_code}): {response.text}"}
+
+        data = response.json()
+
+        # 5. Process the Result
         output = ""
+        # Judge0 status IDs: 3=Accepted, 6=Compilation Error, 11=Runtime Error
+        status_id = data.get("status", {}).get("id", 0)
 
-        # Python & Node
-        if language_id in [71, 63]:
-            command = config["command"] + [filename]
-            
-            # Check if Node exists before running (Prevent crash if Node missing)
-            if language_id == 63 and shutil.which("node") is None:
-                return {"status": "error", "output": "Node.js is not installed on this server."}
+        # Success (ID 3)
+        if status_id == 3:
+            output = decode_b64(data.get("stdout"))
+        
+        # Compilation Error (ID 6)
+        elif status_id == 6:
+            output = "❌ Compilation Error:\n" + decode_b64(data.get("compile_output"))
+        
+        # Runtime Error or Time Limit Exceeded
+        else:
+            err = decode_b64(data.get("stderr")) or decode_b64(data.get("message"))
+            status_desc = data.get("status", {}).get("description", "Error")
+            output = f"❌ {status_desc}:\n{err}"
 
-            process = subprocess.run(
-                command,
-                input=stdin, 
-                capture_output=True,
-                text=True,
-                timeout=5
-            )
-            
-            output = process.stdout if process.returncode == 0 else process.stderr
-
-        # C++
-        elif language_id == 54:
-            # Check if G++ exists
-            if shutil.which("g++") is None:
-                return {"status": "error", "output": "G++ compiler is not installed on this server."}
-
-            # A. Compile
-            # Command: g++ -o /tmp/output_uuid /tmp/temp_uuid.cpp
-            compile_cmd = ["g++", "-o", binary_name, filename]
-            compile_proc = subprocess.run(compile_cmd, capture_output=True, text=True)
-            
-            if compile_proc.returncode != 0:
-                output = f"Compilation Error:\n{compile_proc.stderr}"
-            else:
-                # B. Run
-                run_cmd = [binary_name]
-                
-                run_proc = subprocess.run(
-                    run_cmd, 
-                    input=stdin, 
-                    capture_output=True, 
-                    text=True, 
-                    timeout=3
-                )
-                output = run_proc.stdout if run_proc.returncode == 0 else run_proc.stderr
-
-        # 4. Return Result (Correct Key for Frontend)
+        # 6. Return strictly structured data for Frontend
         return {
-            "status": "success", 
+            "status": "success" if status_id == 3 else "completed_with_error",
             "output": output if output else "Execution finished with no output."
         }
 
-    except subprocess.TimeoutExpired:
-        return {"status": "error", "output": "❌ Time Limit Exceeded (5s)"}
+    except requests.exceptions.Timeout:
+        return {"status": "error", "output": "⚠️ Time Limit Exceeded: The external compiler took too long."}
     
     except Exception as e:
         return {"status": "error", "output": f"System Error: {str(e)}"}
-    
-    finally:
-        # 5. Cleanup (Delete temp files)
-        if os.path.exists(filename):
-            try: os.remove(filename)
-            except: pass
-            
-        if os.path.exists(binary_name):
-            try: os.remove(binary_name)
-            except: pass
