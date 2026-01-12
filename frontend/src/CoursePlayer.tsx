@@ -39,29 +39,34 @@ const ToastNotification = ({ toast, setToast }: any) => {
 };
 
 // --- 🔄 POLLING HELPER FUNCTION ---
+// --- 🔄 IMPROVED POLLING HELPER ---
 const pollResult = async (taskId: string) => {
-    const maxRetries = 20; // Wait max 20 seconds
+    const maxRetries = 20; 
     let attempts = 0;
 
     while (attempts < maxRetries) {
         try {
-           // ✅ CHANGED: Uses API_BASE_URL
             const res = await axios.get(`${API_BASE_URL}/result/${taskId}`);
-            if (res.data.status === "completed") {
-                return res.data.data; // This contains { status: "success", output: "..." }
+            console.log("Polling Response:", res.data); // 👈 Debugging line
+
+            // ✅ FIX: Check for "SUCCESS" (Celery default) OR "completed"
+            const status = res.data.status;
+            if (status === "completed" || status === "SUCCESS") {
+                // If the data is nested in 'data', grab it. Otherwise use the whole response.
+                return res.data.data || res.data; 
             }
-            if (res.data.status === "failed") {
+            
+            if (status === "failed" || status === "FAILURE") {
                 return { status: "error", output: res.data.error || "Execution failed" };
             }
         } catch (e) {
             console.error("Polling error", e);
         }
         attempts++;
-        await new Promise(resolve => setTimeout(resolve, 1000)); // Wait 1 second
+        await new Promise(resolve => setTimeout(resolve, 1000)); 
     }
     return { status: "error", output: "Timeout: Server took too long to respond." };
 };
-
 // --- 💻 COMPONENT: PROFESSIONAL CODE ARENA ---
 const CodeCompiler = ({ lesson }: { lesson: any }) => {
   const [toast, setToast] = useState({ show: false, message: "", type: "success" });
@@ -113,12 +118,13 @@ const CodeCompiler = ({ lesson }: { lesson: any }) => {
         const taskId = res.data.task_id;
         setOutput("Processing in Background...");
 
-        // 2. Poll for Result
-        const result = await pollResult(taskId);
+       // 2. Poll for Result
+      const result = await pollResult(taskId);
 
-        // 3. Display Output (Using 'output' key from worker.py)
-        if (result.output) setOutput(result.output);
-        else setOutput("Execution finished with no output.");
+      // 3. Display Output
+      // Since we fixed pollResult, 'result' is now the full object { status: "...", output: "..." }
+      // We just display whatever is in 'output', whether it is success or error text.
+      setOutput(result.output || "Execution finished with no output.");
 
     } catch (err) {
         console.error(err);
@@ -127,7 +133,6 @@ const CodeCompiler = ({ lesson }: { lesson: any }) => {
         setLoading(false);
     }
   };
-
   const saveProgress = () => {
       triggerToast("Code Saved Successfully!", "success");
   };
