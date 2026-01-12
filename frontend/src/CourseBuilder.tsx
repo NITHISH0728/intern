@@ -357,11 +357,20 @@ const CourseBuilder = () => {
     return <CodingCourseBuilder />;
   }
 
-  // --- STANDARD COURSE RENDER (UNCHANGED) ---
+  // --- STANDARD COURSE RENDER (FIXED DASHBOARD LAYOUT) ---
   return (
-    <div style={{ maxWidth: "1400px", margin: "0 auto", paddingBottom: "100px", background: brand.bg, minHeight: "100vh" }}>
-      {/* Removed animation from this header to prevent "moving" issues */}
-      <header style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "32px", background: brand.cardBg, padding: "16px 40px", borderBottom: `1px solid ${brand.border}`, position: "sticky", top: 0, zIndex: 50 }}>
+    <div style={{ 
+        maxWidth: "1400px", 
+        margin: "0 auto", 
+        background: brand.bg, 
+        // 🔒 FIX 1: Lock the screen height so the page body NEVER scrolls
+        height: "100vh", 
+        display: "flex", 
+        flexDirection: "column",
+        overflow: "hidden" 
+    }}>
+      {/* Header stays fixed at the top naturally because of flex column */}
+      <header style={{ display: "flex", justifyContent: "space-between", alignItems: "center", background: brand.cardBg, padding: "16px 40px", borderBottom: `1px solid ${brand.border}`, zIndex: 50 }}>
         <div style={{ display: "flex", alignItems: "center", gap: "20px" }}>
           <button onClick={() => navigate("/dashboard/courses")} style={{ background: "#E2E8F0", border: "none", padding: "10px", borderRadius: "50%", cursor: "pointer" }}><ArrowLeft size={20} color={brand.textMain} /></button>
           <div>
@@ -374,8 +383,24 @@ const CourseBuilder = () => {
         </div>
       </header>
 
-      <div style={{ display: "grid", gridTemplateColumns: "350px 1fr", gap: "40px", padding: "0 40px" }}>
-        <aside style={{ background: brand.cardBg, borderRadius: "16px", border: `1px solid ${brand.border}`, padding: "24px", height: "fit-content" }}>
+      {/* Content Area: Fills remaining height, sidebar and main sit side-by-side */}
+      <div style={{ 
+          display: "grid", 
+          gridTemplateColumns: "350px 1fr", 
+          gap: "40px", 
+          padding: "20px 40px", // Reduced top padding slightly
+          flex: 1, // Takes all remaining vertical space
+          overflow: "hidden" // Prevents layout blowout
+      }}>
+        {/* SIDEBAR: Scrolls internally */}
+        <aside style={{ 
+            background: brand.cardBg, 
+            borderRadius: "16px", 
+            border: `1px solid ${brand.border}`, 
+            padding: "24px", 
+            height: "100%", // Fill the grid cell
+            overflowY: "auto" // Scrollbar appears HERE if list is long
+        }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px" }}>
             <h3 style={{ fontSize: "16px", fontWeight: "800" }}>Curriculum</h3>
             <button onClick={() => setActiveModal("Heading")} style={{ color: brand.blue, background: "none", border: "none", fontSize: "12px", fontWeight: "700", cursor: "pointer" }}>+ New Heading</button>
@@ -401,7 +426,16 @@ const CourseBuilder = () => {
           </div>
         </aside>
 
-        <main style={{ background: brand.cardBg, borderRadius: "20px", border: `1px solid ${brand.border}`, padding: "60px", textAlign: "center" }}>
+        {/* MAIN PANEL: Fixed in place, scrolls internally */}
+        <main style={{ 
+            background: brand.cardBg, 
+            borderRadius: "20px", 
+            border: `1px solid ${brand.border}`, 
+            padding: "60px", 
+            textAlign: "center",
+            height: "100%", // Fill grid cell
+            overflowY: "auto" // Scrollbar appears HERE if needed
+        }}>
           <Layout size={48} color={brand.border} style={{ marginBottom: "20px" }} />
           <h2 style={{ fontSize: "28px", fontWeight: "800", color: brand.textMain, marginBottom: "8px" }}>Create new learning item</h2>
           <p style={{ color: brand.textLight, marginBottom: "48px" }}>Items will be added to: <span style={{color: brand.blue, fontWeight: "700"}}>{modules.find(m => m.id === selectedModuleId)?.title || "Select a module"}</span></p>
@@ -476,7 +510,12 @@ const CourseBuilder = () => {
                     {activeModal === "Assignment" && (<div><label style={labelStyle}>Description (Optional)</label><textarea rows={3} value={itemInstructions} onChange={(e) => setItemInstructions(e.target.value)} placeholder="Explain what students need to do..." style={{ ...inputStyle, resize: "vertical" }} /></div>)}
                     {activeModal !== "Heading" && (
                         <>
-                        <div><label style={labelStyle}>{activeModal === "Assignment" ? "Submission Drive Link (Google Form/Folder)" : activeModal === "Note" ? "Google Drive PDF Link" : "YouTube / Form Link"}</label><div style={{ position: "relative" }}><Link size={18} style={{ position: "absolute", left: "14px", top: "14px", color: brand.textLight }} /><input value={itemUrl} onChange={(e) => setItemUrl(e.target.value)} placeholder="https://..." style={{ ...inputStyle, paddingLeft: "45px" }} /></div></div>
+                        <div>
+    <label style={labelStyle}>
+        {activeModal === "Assignment" ? "Submission Drive Link (Google Form/Folder)" 
+        : activeModal === "Note" ? "Google Drive PDF Link" 
+        : "YouTube / Google Form / App Script Link"} 
+    </label><div style={{ position: "relative" }}><Link size={18} style={{ position: "absolute", left: "14px", top: "14px", color: brand.textLight }} /><input value={itemUrl} onChange={(e) => setItemUrl(e.target.value)} placeholder="https://..." style={{ ...inputStyle, paddingLeft: "45px" }} /></div></div>
                         {activeModal === "Assignment" && (<div style={{ display: "flex", alignItems: "center", gap: "10px", marginTop: "5px" }}><input type="checkbox" id="mandatoryCheck" checked={isMandatory} onChange={(e) => setIsMandatory(e.target.checked)} style={{ width: "18px", height: "18px", cursor: "pointer" }} /><label htmlFor="mandatoryCheck" style={{ fontSize: "14px", color: "#475569", fontWeight: "600", cursor: "pointer" }}>Mark as Mandatory</label></div>)}
                         {activeModal === "Live Test" && (<div><label style={labelStyle}>Test Duration (Minutes)</label><div style={{ position: "relative" }}><Clock size={18} style={{ position: "absolute", left: "14px", top: "14px", color: brand.textLight }} /><input type="number" value={duration} onChange={(e) => setDuration(e.target.value)} placeholder="60" style={{ ...inputStyle, paddingLeft: "45px" }} /></div></div>)}
                         </>

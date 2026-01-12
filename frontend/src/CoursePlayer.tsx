@@ -11,6 +11,7 @@ import {
   File as FileIcon, X, CheckCircle, Radio, Lock, ArrowLeft, AlertCircle
 } from "lucide-react";
 
+
 // --- 🍞 SHARED TOAST COMPONENT ---
 const ToastNotification = ({ toast, setToast }: any) => {
   if (!toast.show) return null;
@@ -461,6 +462,58 @@ const CodingPlayer = ({ course, token }: { course: any, token: string }) => {
     )
 }
 
+// --- ⏳ DELAYED PLAYER COMPONENT (Fixes the crash) ---
+const DelayedVideoPlayer = ({ lesson, plyrOptions }: { lesson: any, plyrOptions: any }) => {
+    const [isReady, setIsReady] = useState(false);
+
+    // This helper extracts the ID (moved here so it's accessible)
+    const getYoutubeId = (url: string) => {
+        const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|&v=)([^#&?]*).*/;
+        const match = url.match(regExp);
+        return (match && match[2].length === 11) ? match[2] : null;
+    };
+
+    // ⚡ THE MAGIC: Whenever the lesson ID changes, we reset 'isReady' to false
+    // Then wait 500ms before showing the new player.
+    // This destroys the old player completely (like switching to notes).
+    useEffect(() => {
+        setIsReady(false);
+        const timer = setTimeout(() => {
+            setIsReady(true);
+        }, 1000); // 1 second delay (You can make this 3000 for 3 secs)
+        return () => clearTimeout(timer);
+    }, [lesson.id]);
+
+    const videoId = getYoutubeId(lesson.url);
+    
+    // 1. If Video ID is invalid
+    if (!videoId) return <div className="text-white p-10">Invalid Video URL</div>;
+
+    // 2. If Loading (The transition state)
+    if (!isReady) {
+        return (
+            <div className="w-full h-full flex flex-col items-center justify-center bg-black">
+                {/* Simple Loading Spinner */}
+                <div className="w-10 h-10 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mb-4"></div>
+                <p className="text-white text-sm font-bold animate-pulse">LOADING NEXT LESSON...</p>
+            </div>
+        );
+    }
+
+    // 3. The Actual Player (Only renders after delay)
+    const plyrSource = { type: "video" as const, sources: [{ src: videoId, provider: "youtube" as const }] };
+    
+    return (
+         <div style={{ width: "100%", height: "100%", background: "black", display: "flex", alignItems: "center", justifyContent: "center" }}>
+            <div style={{ width: "100%", maxWidth: "1000px", borderRadius: "12px", overflow: "hidden", boxShadow: "0 20px 50px rgba(0,0,0,0.5)" }}>
+                <style>{` .plyr__video-embed iframe { top: -50%; height: 200%; } :root { --plyr-color-main: #005EB8; } `}</style>
+                {/* We use the key here to ensure React treats it as a fresh instance */}
+                <Plyr key={lesson.id} source={plyrSource} options={plyrOptions} />
+            </div>
+        </div>
+    );
+};
+
 // --- MAIN PLAYER COMPONENT (UNTOUCHED) ---
 const CoursePlayer = () => {
   const { courseId } = useParams();
@@ -469,7 +522,7 @@ const CoursePlayer = () => {
   const [activeLesson, setActiveLesson] = useState<any>(null);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [expandedModules, setExpandedModules] = useState<number[]>([]);
-  
+  const [isTransitioning, setIsTransitioning] = useState(false);
   // File Upload State
   const [assignmentFile, setAssignmentFile] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
@@ -520,13 +573,35 @@ const CoursePlayer = () => {
     fetchCourse();
   }, [courseId]);
 
+  useEffect(() => {
+    if (activeLesson) {
+        setIsTransitioning(true);
+        // 500ms delay to force the old player to destroy completely
+        const timer = setTimeout(() => {
+            setIsTransitioning(false);
+        }, 500); 
+        return () => clearTimeout(timer);
+    }
+}, [activeLesson?.id]);
+
   const toggleModule = (moduleId: number) => setExpandedModules(prev => prev.includes(moduleId) ? prev.filter(id => id !== moduleId) : [...prev, moduleId]);
   
   const getEmbedUrl = (url: string) => {
     if (!url) return "";
+    
+    // 1. Handle Google Forms (Existing Logic)
     if (url.includes("docs.google.com/forms")) {
         return url.replace(/\/viewform.*/, "/viewform?embedded=true").replace(/\/view.*/, "/viewform?embedded=true");
     }
+
+    // 2. ✅ NEW: Handle Google App Scripts
+    // We return the URL exactly as is. We do NOT want to add '/preview' to it.
+    if (url.includes("script.google.com")) {
+        return url; 
+    }
+
+    // 3. Handle Google Drive Files (PDFs/Docs)
+    // This replaces /view with /preview for clean embedding
     return url.replace("/view", "/preview");
   };
 
@@ -579,17 +654,53 @@ const CoursePlayer = () => {
     }
   };
 
-  const renderContent = () => {
+ // 👇 REPLACE YOUR ENTIRE renderContent FUNCTION WITH THIS:
+const renderContent = () => {
     if (!activeLesson) return <div className="text-white p-10 text-center">Select a lesson</div>;
+    
+    // 1. SHOW LOADING SCREEN DURING TRANSITION
+    if (isTransitioning) {
+        return (
+            <div className="w-full h-full flex flex-col items-center justify-center bg-slate-900 text-white gap-4">
+                {/* Simple Spinner */}
+                <div className="w-10 h-10 border-4 border-[#005EB8] border-t-transparent rounded-full animate-spin"></div>
+                <p className="text-sm font-bold tracking-wider animate-pulse text-slate-400">LOADING...</p>
+            </div>
+        );
+    }
+
+    // 2. STANDARD CONTENT RENDERING (Your existing logic)
     if (activeLesson.type === "note") return <iframe src={getEmbedUrl(activeLesson.url)} width="100%" height="100%" className="bg-white border-0" allow="autoplay" />;
-    if (activeLesson.type === "quiz") return <div className="w-full h-full bg-slate-50 flex flex-col items-center justify-center p-4"><iframe src={getEmbedUrl(activeLesson.url)} width="100%" height="100%" frameBorder="0" className="rounded-xl shadow-sm border border-slate-200 bg-white max-w-4xl" allowFullScreen>Loading...</iframe></div>;
+    
+   if (activeLesson.type === "quiz") {
+        return (
+            <div className="w-full h-full bg-slate-50 flex flex-col items-center justify-center p-4">
+                <iframe 
+                    src={getEmbedUrl(activeLesson.url)} 
+                    width="100%" 
+                    height="100%" 
+                    frameBorder="0" 
+                    className="rounded-xl shadow-sm border border-slate-200 bg-white max-w-4xl" 
+                    allowFullScreen
+                    // ✅ NEW: These permissions ensure App Scripts run smoothly
+                    sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-top-navigation"
+                >
+                    Loading...
+                </iframe>
+            </div>
+        );
+    }
     
     if (activeLesson.type === "video" || activeLesson.type === "live_class") {
-        const videoId = getYoutubeId(activeLesson.url);
-        if (!videoId) return <div style={{color: "white", padding: "40px"}}>Invalid Video URL</div>;
-        const plyrSource = { type: "video" as const, sources: [{ src: videoId, provider: "youtube" as const }] };
-        return <div style={{ width: "100%", height: "100%", background: "black", display: "flex", alignItems: "center", justifyContent: "center" }}><div style={{ width: "100%", maxWidth: "1000px", borderRadius: "12px", overflow: "hidden", boxShadow: "0 20px 50px rgba(0,0,0,0.5)" }}><style>{` .plyr__video-embed iframe { top: -50%; height: 200%; } :root { --plyr-color-main: #005EB8; } `}</style><Plyr key={activeLesson.id} source={plyrSource} options={plyrOptions} /></div></div>;
-    }
+    // This calls the helper component we created at the top of the file
+    return (
+        <DelayedVideoPlayer 
+            key={activeLesson.id} 
+            lesson={activeLesson} 
+            plyrOptions={plyrOptions} 
+        />
+    );
+}
     
     if (activeLesson.type === "code_test") return <CodeCompiler lesson={activeLesson} />;
     
@@ -622,7 +733,7 @@ const CoursePlayer = () => {
       );
     }
     return <div className="text-white p-10 text-center">Select content from the sidebar</div>;
-  };
+};
 
   // ✅ CHECK: If Coding Course, Switch Player View completely
   if (course?.course_type === "coding") {
