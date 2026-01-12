@@ -30,4 +30,3 @@ pip-delete-this-directory.txt
 # --- SECRETS (Never Upload) ---
 backend/token.json
 backend/credentials.json
-*.json
