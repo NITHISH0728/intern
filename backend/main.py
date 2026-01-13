@@ -393,6 +393,7 @@ async def admit_single_student(req: AdmitStudentRequest, db: AsyncSession = Depe
     
     final_password = req.password if req.password else generate_random_password()
     is_new_user = False
+    email_status = "skipped"  # Default value prevents "UnboundLocalError"
 
     # 2. Create User if New
     if not student:
@@ -402,18 +403,20 @@ async def admit_single_student(req: AdmitStudentRequest, db: AsyncSession = Depe
             full_name=req.full_name, 
             hashed_password=get_password_hash(final_password), 
             role="student",
-           
         )
         db.add(student)
         await db.commit()
         await db.refresh(student)
         
-        # 3. 📧 Send Email (Async + Error Handling)
+        # 3. 📧 Send Email (ONLY for New Users)
+        # ✅ INDENTATION FIXED: This block is now inside the 'if'
         try:
+            email_status = "sent"
             await asyncio.to_thread(send_credentials_email, req.email, req.full_name, final_password)
         except Exception as e:
             print(f"❌ Email Failed: {e}")
-            raise HTTPException(status_code=500, detail=f"Account created, but Email Failed: {str(e)}")
+            email_status = f"failed: {str(e)}"
+            # We catch the error so the request doesn't fail, but we record the status
     
     # 4. Enroll in Courses
     enrolled = []
@@ -426,10 +429,15 @@ async def admit_single_student(req: AdmitStudentRequest, db: AsyncSession = Depe
     await db.commit()
 
     if is_new_user:
-        return {"message": f"User created & emailed. Enrolled in {len(enrolled)} courses."}
+        return {
+            "message": f"User created. Enrolled in {len(enrolled)} courses.", 
+            "email_status": email_status
+        }
     else:
-        return {"message": f"Existing user enrolled in {len(enrolled)} courses."}
-
+        return {
+            "message": f"Existing user enrolled in {len(enrolled)} new courses.", 
+            "email_status": email_status
+        }
 # In main.py
 
 @app.post("/api/v1/admin/bulk-admit")
