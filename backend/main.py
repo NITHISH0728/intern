@@ -2,7 +2,8 @@ from fastapi import FastAPI, Depends, HTTPException, status, UploadFile, File, F
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
-from sqlalchemy.orm import selectinload, joinedload
+from sqlalchemy.orm import selectinload 
+from sqlalchemy import delete
 from pydantic import BaseModel
 import bcrypt 
 from jose import JWTError, jwt
@@ -620,9 +621,10 @@ async def get_course_player(course_id: int, db: AsyncSession = Depends(get_db), 
         raise HTTPException(status_code=402, detail="Trial Expired")
 
     # Fetch Progress
-    prog_res = await db.execute(select(models.LessonProgress).where(models.LessonProgress.user_id == current_user.id, models.LessonProgress.is_completed == True))
+    prog_res = await db.execute(select(models.LessonProgress).where(models.LessonProgress.user_id == current_user.id))
     progress_records = prog_res.scalars().all()
-    completed_ids = {p.content_item_id for p in progress_records}
+    progress_map = {p.content_item_id: p for p in progress_records}
+    completed_ids = {p.content_item_id for p in progress_records if p.is_completed}
 
     return {
         "id": course.id, 
@@ -636,10 +638,22 @@ async def get_course_player(course_id: int, db: AsyncSession = Depends(get_db), 
                 "is_completed": any(item.type == 'assignment' and item.id in completed_ids for item in m.items),
                 "lessons": [
                     {
-                        "id": c.id, "title": c.title, "type": c.type, "url": c.content, 
-                        "test_config": c.test_config, "instructions": c.instructions, 
-                        "duration": c.duration, "is_mandatory": c.is_mandatory, 
-                        "is_completed": c.id in completed_ids 
+                        "id": c.id, 
+                        "title": c.title, 
+                        "type": c.type, 
+                        "url": c.content, 
+                        "test_config": c.test_config, 
+                        "instructions": c.instructions, 
+                        "duration": c.duration, 
+                        "is_mandatory": c.is_mandatory, 
+                        "is_completed": c.id in completed_ids, 
+
+                        # ✅ INSERT THE NEW LINES EXACTLY HERE (After "is_completed")
+                        "start_time": c.start_time,
+                        "end_time": c.end_time,
+                        "is_terminated": progress_map.get(c.id).is_terminated if c.id in progress_map else False,
+                        "violation_count": progress_map.get(c.id).violation_count if c.id in progress_map else 0
+                        
                     } for c in m.items
                 ]
             } for m in course.modules
@@ -684,15 +698,39 @@ async def change_password(req: PasswordChange, db: AsyncSession = Depends(get_db
     await db.commit()
     return {"message": "Password updated"}
 
+# In backend/main.py
+
 @app.delete("/api/v1/content/{content_id}")
 async def delete_content(content_id: int, db: AsyncSession = Depends(get_db), current_user: models.User = Depends(require_instructor)):
+    # 1. Fetch the item
     res = await db.execute(select(models.ContentItem).where(models.ContentItem.id == content_id))
     item = res.scalars().first()
-    if item: 
+    
+    if not item:
+        raise HTTPException(status_code=404, detail="Item not found")
+
+    try:
+        # 2. ✅ CRITICAL FIX: Delete related dependencies first!
+        
+        # Delete related Progress records (Proctoring/Completion data)
+        await db.execute(
+            delete(models.LessonProgress).where(models.LessonProgress.content_item_id == content_id)
+        )
+
+        # Delete related Submissions (if it was an assignment)
+        await db.execute(
+            delete(models.Submission).where(models.Submission.content_item_id == content_id)
+        )
+
+        # 3. Now delete the actual item
         await db.delete(item)
         await db.commit()
-        return {"message": "Deleted"}
-    raise HTTPException(status_code=404)
+        return {"message": "Deleted successfully"}
+
+    except Exception as e:
+        await db.rollback()
+        print(f"Delete Error: {str(e)}") # This prints to your backend terminal for debugging
+        raise HTTPException(status_code=500, detail=f"Server Error: {str(e)}")
 
 @app.patch("/api/v1/content/{content_id}")
 async def update_content(content_id: int, update: ContentUpdate, db: AsyncSession = Depends(get_db), current_user: models.User = Depends(require_instructor)):
