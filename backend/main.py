@@ -228,32 +228,41 @@ def send_credentials_email(to_email: str, name: str, password: str = None, subje
     sender_email = os.getenv("EMAIL_SENDER")
     sender_password = os.getenv("EMAIL_PASSWORD")
     
+    print(f"🚀 ATTEMPTING EMAIL to: {to_email}")
+
     if not sender_email or not sender_password:
-        raise Exception("Email credentials missing in .env")
+        print("❌ ERROR: Credentials missing.")
+        return
 
     msg = MIMEMultipart()
     msg['From'] = sender_email
     msg['To'] = to_email
     
-    # 🧠 SMART LOGIC:
-    # If custom subject/body provided (for OTP), use it.
-    # Otherwise, use the default Instructor Admit template.
     if subject and body:
         msg['Subject'] = subject
         email_content = body
     else:
-        msg['Subject'] = "Welcome to iQmath! Here are your credentials"
+        msg['Subject'] = "Welcome to iQmath! Your Credentials"
         email_content = f"Welcome {name}!\n\nUser ID: {to_email}\nPassword: {password}\n\nHappy Learning!"
 
     msg.attach(MIMEText(email_content, 'plain'))
 
-    # Send (No try/except here - let it crash if it fails)
-    server = smtplib.SMTP("smtp.gmail.com", 587)
-    server.starttls()
-    server.login(sender_email, sender_password)
-    server.sendmail(sender_email, to_email, msg.as_string())
-    server.quit()
-    print(f"✅ Email sent to {to_email}")
+    try:
+        # ✅ CHANGE: Use SMTP_SSL on Port 465 (Better for Render/Cloud)
+        server = smtplib.SMTP_SSL("smtp.gmail.com", 465)
+        
+        # Login
+        server.login(sender_email, sender_password)
+        
+        # Send
+        server.sendmail(sender_email, to_email, msg.as_string())
+        server.quit()
+        print(f"✅ SUCCESS: Email sent to {to_email}")
+        
+    except smtplib.SMTPAuthenticationError:
+        print("❌ AUTH ERROR: Google rejected the password. Check for hidden spaces in Render Env Vars.")
+    except Exception as e:
+        print(f"❌ CRITICAL EMAIL FAILURE: {str(e)}")
     
 def upload_file_to_drive(file_obj, filename, folder_link):
     # (Drive logic remains mostly same, executed in thread pool usually by FastAPI)
