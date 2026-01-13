@@ -1095,7 +1095,7 @@ async def record_violation(report: ViolationReport, db: AsyncSession = Depends(g
         progress.violation_count += 1
         
         # ✅ FIX 1: Strict Logic. If count is 2 or more, Terminate.
-        if progress.violation_count >= 2: 
+        if progress.violation_count > 2: 
             progress.is_terminated = True
             progress.is_completed = False
             
