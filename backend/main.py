@@ -228,15 +228,11 @@ def send_credentials_email(to_email: str, name: str, password: str = None, subje
     sender_email = os.getenv("EMAIL_SENDER")
     sender_password = os.getenv("EMAIL_PASSWORD")
     
-    # Brevo SMTP Configuration
-    SMTP_SERVER = "smtp-relay.brevo.com"
-    SMTP_PORT = 587
-    
-    print(f"🚀 [BREVO] Attempting to send to: {to_email}")
+    print(f"🚀 [EMAIL] Attempting to send to: {to_email}", flush=True)
 
     if not sender_email or not sender_password:
-        print("❌ ERROR: Credentials missing.")
-        return
+        print("❌ [EMAIL] ERROR: Credentials missing in environment variables.", flush=True)
+        raise Exception("Missing Email Credentials")
 
     msg = MIMEMultipart()
     msg['From'] = sender_email
@@ -252,20 +248,19 @@ def send_credentials_email(to_email: str, name: str, password: str = None, subje
     msg.attach(MIMEText(email_content, 'plain'))
 
     try:
-        # Brevo uses standard TLS on 587
-        server = smtplib.SMTP(SMTP_SERVER, SMTP_PORT)
-        server.starttls() 
+        # ✅ USE SMTP_SSL (Port 465) for Google. 
+        # Standard SMTP (587) often times out on cloud servers.
+        print("...Connecting to Gmail SSL...", flush=True)
+        server = smtplib.SMTP_SSL("smtp.gmail.com", 465)
         
-        # Login
         server.login(sender_email, sender_password)
-        
-        # Send
         server.sendmail(sender_email, to_email, msg.as_string())
         server.quit()
-        print(f"✅ [BREVO] SUCCESS: Email sent to {to_email}")
+        print(f"✅ [EMAIL] SUCCESS: Sent to {to_email}", flush=True)
         
     except Exception as e:
-        print(f"❌ [BREVO] FAILED: {str(e)}")
+        print(f"❌ [EMAIL] FAILED: {str(e)}", flush=True)
+        raise e # Re-raise to be caught by the calling function
     
 def upload_file_to_drive(file_obj, filename, folder_link):
     # (Drive logic remains mostly same, executed in thread pool usually by FastAPI)
@@ -394,6 +389,7 @@ async def admit_single_student(req: AdmitStudentRequest, db: AsyncSession = Depe
     final_password = req.password if req.password else generate_random_password()
     is_new_user = False
     email_status = "skipped"
+    debug_password = None # Only revealed if email fails
 
     # 2. Create User if New
     if not student:
@@ -405,18 +401,18 @@ async def admit_single_student(req: AdmitStudentRequest, db: AsyncSession = Depe
             role="student",
         )
         db.add(student)
-        await db.commit()
+        await db.commit() # ✅ User is saved!
         await db.refresh(student)
         
-        # 3. 📧 Send Email (SAFE MODE)
-        # We try to send email, but if it fails, we DO NOT crash the request.
+        # 3. 📧 Send Email (Safe Mode)
         try:
-            email_status = "sent"
             await asyncio.to_thread(send_credentials_email, req.email, req.full_name, final_password)
+            email_status = "sent"
         except Exception as e:
-            print(f"❌ Email Failed: {e}")
+            print(f"❌ Email Failed inside route: {e}", flush=True)
             email_status = f"failed: {str(e)}"
-            # We continue execution so the student is still enrolled
+            # 🚨 EMERGENCY BACKUP: If email fails, send password to Admin UI so you aren't locked out
+            debug_password = final_password 
     
     # 4. Enroll in Courses
     enrolled = []
@@ -428,15 +424,16 @@ async def admit_single_student(req: AdmitStudentRequest, db: AsyncSession = Depe
     
     await db.commit()
 
-    if is_new_user:
-        return {
-            "message": f"User created. Enrolled in {len(enrolled)} courses.", 
-            "email_status": email_status
-        }
-    else:
-        return {"message": f"Existing user enrolled in {len(enrolled)} courses.", "email_status": "skipped"}
-# In main.py
+    response_payload = {
+        "message": f"User {'created' if is_new_user else 'enrolled'}. Enrolled in {len(enrolled)} courses.", 
+        "email_status": email_status
+    }
 
+    # If email failed for a new user, attach the password to the response
+    if debug_password:
+        response_payload["manual_password_backup"] = debug_password
+
+    return response_payload
 @app.post("/api/v1/admin/bulk-admit")
 async def bulk_admit_students(file: UploadFile = File(...), course_id: int = Form(...), db: AsyncSession = Depends(get_db), current_user: models.User = Depends(require_instructor)):
     contents = await file.read()
