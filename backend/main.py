@@ -178,6 +178,10 @@ class CodePayload(BaseModel):
 
 class OTPLoginRequest(BaseModel):
     phone_number: str
+    
+    
+class ModuleUpdate(BaseModel):
+    title: str
         
 # --- 🔑 AUTH LOGIC ---
 def verify_password(plain_password, hashed_password):
@@ -1194,6 +1198,60 @@ async def get_lesson_status(lesson_id: int, db: AsyncSession = Depends(get_db), 
         "is_terminated": progress.is_terminated,
         "violation_count": progress.violation_count
     }    
+    
+@app.patch("/api/v1/modules/{module_id}")
+async def update_module(module_id: int, update: ModuleUpdate, db: AsyncSession = Depends(get_db), current_user: models.User = Depends(require_instructor)):
+    res = await db.execute(select(models.Module).where(models.Module.id == module_id))
+    module = res.scalars().first()
+    if not module:
+        raise HTTPException(status_code=404, detail="Module not found")
+    
+    module.title = update.title
+    await db.commit()
+    return {"message": "Module renamed"}
+
+# 2. Delete Module (Cascade)
+@app.delete("/api/v1/modules/{module_id}")
+async def delete_module(module_id: int, db: AsyncSession = Depends(get_db), current_user: models.User = Depends(require_instructor)):
+    # Fetch module with items to delete dependencies
+    res = await db.execute(select(models.Module).options(selectinload(models.Module.items)).where(models.Module.id == module_id))
+    module = res.scalars().first()
+    
+    if not module:
+        raise HTTPException(status_code=404, detail="Module not found")
+    
+    try:
+        # Delete dependencies for ALL items in this module
+        for item in module.items:
+            await db.execute(delete(models.LessonProgress).where(models.LessonProgress.content_item_id == item.id))
+            await db.execute(delete(models.Submission).where(models.Submission.content_item_id == item.id))
+        
+        # Now delete items
+        await db.execute(delete(models.ContentItem).where(models.ContentItem.module_id == module_id))
+        
+        # Finally delete module
+        await db.delete(module)
+        await db.commit()
+        return {"message": "Module deleted"}
+    except Exception as e:
+        await db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+
+# 3. Reorder Items
+class ReorderRequest(BaseModel):
+    item_ids: List[int] # List of IDs in the new order
+
+@app.put("/api/v1/modules/{module_id}/reorder")
+async def reorder_module_items(module_id: int, req: ReorderRequest, db: AsyncSession = Depends(get_db), current_user: models.User = Depends(require_instructor)):
+    # Update the 'order' field for each item based on its index in the list
+    for index, item_id in enumerate(req.item_ids):
+        await db.execute(
+            models.ContentItem.__table__.update()
+            .where(models.ContentItem.id == item_id)
+            .values(order=index)
+        )
+    await db.commit()
+    return {"message": "Order updated"}    
     
 @app.get("/")
 def read_root(): return {"status": "online", "message": "iQmath Military Grade API Active 🟢"}
