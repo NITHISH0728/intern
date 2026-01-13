@@ -1082,7 +1082,6 @@ async def login_otp(req: OTPLoginRequest, db: AsyncSession = Depends(get_db)):
 
 @app.post("/api/v1/proctoring/violation")
 async def record_violation(report: ViolationReport, db: AsyncSession = Depends(get_db), current_user: models.User = Depends(require_student)):
-    # Find existing progress or create new
     res = await db.execute(select(models.LessonProgress).where(models.LessonProgress.user_id == current_user.id, models.LessonProgress.content_item_id == report.lesson_id))
     progress = res.scalars().first()
     
@@ -1091,22 +1090,40 @@ async def record_violation(report: ViolationReport, db: AsyncSession = Depends(g
         db.add(progress)
     else:
         if progress.is_terminated:
-            return {"status": "terminated", "message": "Already terminated"}
+            return {"status": "terminated", "message": "Already terminated", "violation_count": progress.violation_count}
             
         progress.violation_count += 1
         
-        # TERMINATION LOGIC (More than 2 violations = 3 strikes)
-        if progress.violation_count > 2:
+        # ✅ FIX 1: Strict Logic. If count is 2 or more, Terminate.
+        if progress.violation_count >= 2: 
             progress.is_terminated = True
-            progress.is_completed = False # Fail the test
+            progress.is_completed = False
             
     await db.commit()
     
     return {
         "status": "terminated" if progress.is_terminated else "warning", 
         "violation_count": progress.violation_count,
-        "remaining_attempts": 3 - progress.violation_count
+        # ✅ FIX 2: Correct math for frontend display (Max 2)
+        "remaining_attempts": max(0, 2 - progress.violation_count) 
     }
+    
+# ✅ NEW: Helper to refresh status instantly on frontend mount
+@app.get("/api/v1/proctoring/status/{lesson_id}")
+async def get_lesson_status(lesson_id: int, db: AsyncSession = Depends(get_db), current_user: models.User = Depends(get_current_user)):
+    res = await db.execute(select(models.LessonProgress).where(
+        models.LessonProgress.user_id == current_user.id, 
+        models.LessonProgress.content_item_id == lesson_id
+    ))
+    progress = res.scalars().first()
+    
+    if not progress:
+        return {"is_terminated": False, "violation_count": 0}
+        
+    return {
+        "is_terminated": progress.is_terminated,
+        "violation_count": progress.violation_count
+    }    
     
 @app.get("/")
 def read_root(): return {"status": "online", "message": "iQmath Military Grade API Active 🟢"}

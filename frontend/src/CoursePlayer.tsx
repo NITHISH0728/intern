@@ -543,55 +543,70 @@ const LiveTestProctor = ({ lesson }: { lesson: any }) => {
 
     const [status, setStatus] = useState("checking"); 
     
-    const [countdownString, setCountdownString] = useState(""); // For "Starts in..."
-    const [testTimerString, setTestTimerString] = useState(""); // For "Time Remaining..."
+    const [countdownString, setCountdownString] = useState(""); 
+    const [testTimerString, setTestTimerString] = useState(""); 
     
-    // Initialize violation count from Backend (Important for persistence!)
-    const [violationCount, setViolationCount] = useState(lesson.violation_count || 0);
+    // Initialize with 0, but we will fetch the REAL count immediately
+    const [violationCount, setViolationCount] = useState(0);
     const [isFullscreen, setIsFullscreen] = useState(false);
 
-    // 1. MASTER TIME & STATE CONTROLLER
+    // 1. ✅ CRITICAL FIX: Fetch REAL status on mount to prevent "Zombie" tests
     useEffect(() => {
-        const checkStatus = () => {
-            // If backend says already terminated, lock it immediately.
-            if (lesson.is_terminated) {
-                setStatus("terminated");
-                return;
+        const fetchFreshStatus = async () => {
+            try {
+                const token = localStorage.getItem("token");
+                // Call the new endpoint we just added
+                const res = await axios.get(`${API_BASE_URL}/proctoring/status/${lesson.id}`, {
+                    headers: { Authorization: `Bearer ${token}` }
+                });
+                
+                if (res.data.is_terminated) {
+                    setStatus("terminated");
+                } else {
+                    setViolationCount(res.data.violation_count);
+                }
+            } catch (e) {
+                console.error("Failed to verify proctor status", e);
+                // Fallback to prop data if API fails
+                if (lesson.is_terminated) setStatus("terminated");
             }
+        };
+        fetchFreshStatus();
+    }, [lesson.id]); // Only run once when lesson changes
+
+    // 2. MASTER TIME CONTROLLER
+    useEffect(() => {
+        const checkTime = () => {
+            // If we already confirmed termination via API, Stop.
+            if (status === "terminated") return;
 
             const now = new Date();
             const start = new Date(lesson.start_time);
             const end = new Date(lesson.end_time);
 
-            // CASE 1: Test is over (Time passed)
             if (now > end) {
                 setStatus("expired");
                 return;
             }
 
-            // CASE 2: Test is currently running (Window Open)
             if (now >= start && now <= end) {
-                // Only change status if we are in a "pre-test" state. 
-                // Don't disrupt 'active' or 'terminated'.
+                // If we are in checking/waiting/countdown, move to ready
+                // BUT DO NOT OVERRIDE 'terminated' or 'active'
                 if (["checking", "waiting", "countdown"].includes(status)) {
                     setStatus("ready");
                 }
                 
-                // Calculate Remaining Time for the Top Right Timer
+                // Timer Logic
                 const diff = end.getTime() - now.getTime();
                 const hours = Math.floor(diff / (1000 * 60 * 60));
                 const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
                 const seconds = Math.floor((diff % (1000 * 60)) / 1000);
                 setTestTimerString(`${hours}h ${minutes}m ${seconds}s`);
-            }
-
-            // CASE 3: Test is in the future
-            if (now < start) {
+            } else if (now < start) {
                 const diff = start.getTime() - now.getTime();
                 const minutes = Math.floor(diff / 60000);
                 const seconds = Math.floor((diff % 60000) / 1000);
                 
-                // Logic: 5 Min Countdown
                 if (diff <= 5 * 60 * 1000) {
                     setStatus("countdown");
                     setCountdownString(`${minutes}m ${seconds}s`);
@@ -601,15 +616,13 @@ const LiveTestProctor = ({ lesson }: { lesson: any }) => {
             }
         };
 
-        checkStatus(); // Run immediately
-        const interval = setInterval(checkStatus, 1000);
+        const interval = setInterval(checkTime, 1000);
+        checkTime(); // Run once immediately
         return () => clearInterval(interval);
-    }, [lesson, status]);
+    }, [lesson, status]); // 'status' dep ensures we don't overwrite active/terminated states
 
-
-    // 2. VIOLATION REPORTER
+    // 3. REPORT VIOLATION
     const reportViolation = async () => {
-        // If already terminated or expired, don't report
         if (status === "terminated" || status === "expired") return;
 
         try {
@@ -619,30 +632,24 @@ const LiveTestProctor = ({ lesson }: { lesson: any }) => {
                 { headers: { Authorization: `Bearer ${token}` } }
             );
             
-            // Update local count from server response
             setViolationCount(res.data.violation_count);
             
             if (res.data.status === "terminated") {
                 setStatus("terminated");
-                if (document.fullscreenElement) {
-                     document.exitFullscreen().catch(() => {});
-                }
+                document.exitFullscreen().catch(() => {});
             } else {
-                // Optional: Play a warning sound here
-                alert(`⚠️ PROCTORING WARNING \n\nFocus lost! You have ${3 - res.data.violation_count} attempts left before termination.`);
+                // ✅ FIX: Visual Logic updated for 2 max warnings
+                alert(`⚠️ WARNING! Focus lost.\n\nYou have ${res.data.remaining_attempts} attempt(s) left.\nNext violation will terminate the test.`);
             }
-        } catch (err) { console.error("Violation Report Failed:", err); } 
+        } catch (err) { console.error(err); } 
     };
 
-    // 3. LISTENERS (Fullscreen & Tabs)
+    // 4. LISTENERS
     useEffect(() => {
         if (status !== "active") return;
 
-        const handleVisibilityChange = () => { 
-            if (document.hidden) reportViolation(); 
-        };
-        
-        const handleFullscreenChange = () => {
+        const handleVisibility = () => { if (document.hidden) reportViolation(); };
+        const handleFullscreen = () => {
             if (!document.fullscreenElement) {
                 setIsFullscreen(false);
                 reportViolation();
@@ -650,20 +657,18 @@ const LiveTestProctor = ({ lesson }: { lesson: any }) => {
                 setIsFullscreen(true);
             }
         };
+        const handleContext = (e: any) => e.preventDefault();
 
-        // Block Right Click
-        const handleContextMenu = (e: MouseEvent) => e.preventDefault();
-
-        document.addEventListener("visibilitychange", handleVisibilityChange);
-        document.addEventListener("fullscreenchange", handleFullscreenChange);
-        document.addEventListener("contextmenu", handleContextMenu);
+        document.addEventListener("visibilitychange", handleVisibility);
+        document.addEventListener("fullscreenchange", handleFullscreen);
+        document.addEventListener("contextmenu", handleContext);
 
         return () => {
-            document.removeEventListener("visibilitychange", handleVisibilityChange);
-            document.removeEventListener("fullscreenchange", handleFullscreenChange);
-            document.removeEventListener("contextmenu", handleContextMenu);
+            document.removeEventListener("visibilitychange", handleVisibility);
+            document.removeEventListener("fullscreenchange", handleFullscreen);
+            document.removeEventListener("contextmenu", handleContext);
         };
-    }, [status]); // Only run listeners when test is ACTIVE
+    }, [status]);
 
     const enterFullScreenAndStart = () => {
         const elem = document.documentElement;
@@ -671,154 +676,112 @@ const LiveTestProctor = ({ lesson }: { lesson: any }) => {
             elem.requestFullscreen().then(() => {
                 setStatus("active");
                 setIsFullscreen(true);
-            }).catch(() => alert("Fullscreen permission denied. You cannot take the test."));
+            }).catch(() => alert("Fullscreen required."));
         }
     };
 
-    // --- RENDER VIEWS ---
+    // --- VIEWS ---
 
-    // 1. FUTURE (Long Wait)
     if (status === "waiting") {
         return (
-            <div className="flex flex-col items-center justify-center h-full bg-slate-50 text-slate-800 p-10 text-center">
+            <div className="flex flex-col items-center justify-center h-full bg-slate-50 p-10 text-center">
                 <Clock size={64} className="text-[#005EB8] mb-4" />
-                <h2 className="text-2xl font-bold mb-2">Upcoming Live Test</h2>
-                <p className="text-slate-500">This test is scheduled for:</p>
-                <div className="text-xl font-bold mt-2 text-[#005EB8]">
-                    {new Date(lesson.start_time).toLocaleString()}
-                </div>
-                <p className="text-xs text-slate-400 mt-8">Please return to this page at the scheduled time.</p>
+                <h2 className="text-2xl font-bold">Test Scheduled</h2>
+                <div className="text-xl font-bold mt-2 text-[#005EB8]">{new Date(lesson.start_time).toLocaleString()}</div>
             </div>
         );
     }
 
-    // 2. COUNTDOWN (< 5 Mins)
     if (status === "countdown") {
         return (
             <div className="flex flex-col items-center justify-center h-full bg-slate-900 text-white p-10 text-center">
-                <Clock size={64} className="text-yellow-400 mb-4 animate-pulse" />
-                <h2 className="text-3xl font-bold mb-2">Test Starting Soon</h2>
-                <div className="text-7xl font-mono font-bold text-yellow-400 mt-6">{countdownString}</div>
-                <p className="text-slate-400 mt-6">Do not refresh the page.</p>
+                <h2 className="text-3xl font-bold mb-4">Starting Soon</h2>
+                <div className="text-7xl font-mono font-bold text-yellow-400">{countdownString}</div>
             </div>
         );
     }
 
-    // 3. READY (Start Button)
     if (status === "ready") {
         return (
-            <div className="flex flex-col items-center justify-center h-full bg-green-50 text-slate-900 p-10 text-center">
+            <div className="flex flex-col items-center justify-center h-full bg-green-50 p-10 text-center">
                 <Zap size={64} className="text-green-600 mb-4" />
-                <h2 className="text-3xl font-bold mb-4">The Test is Live!</h2>
-                <p className="text-slate-600 mb-8 max-w-md">The proctoring system is active. Ensure you have a stable connection and no other apps running.</p>
-                <button onClick={() => setStatus("rules")} className="bg-green-600 text-white px-8 py-4 rounded-xl font-bold text-xl shadow-lg hover:bg-green-700 transition-all animate-bounce">
-                    Proceed to Exam Hall
+                <h2 className="text-3xl font-bold mb-4">Test is Live</h2>
+                <button onClick={() => setStatus("rules")} className="bg-green-600 text-white px-8 py-4 rounded-xl font-bold shadow-lg hover:scale-105 transition-all">
+                    Start Exam Process
                 </button>
             </div>
         );
     }
 
-    // 4. RULES (Last Step)
     if (status === "rules") {
         return (
             <div className="fixed inset-0 z-[9999] flex flex-col items-center justify-center bg-white p-10">
-                <div className="max-w-2xl w-full text-center">
+                <div className="max-w-2xl text-center">
                     <AlertCircle size={48} className="text-red-500 mx-auto mb-4" />
-                    <h1 className="text-3xl font-bold text-slate-900 mb-6">⚠️ Strict Exam Rules</h1>
-                    <div className="text-left space-y-4 text-slate-700 bg-red-50 p-8 rounded-xl border border-red-200 mb-8">
-                        <li className="flex items-start gap-3"><span className="font-bold">1. Fullscreen Mandatory:</span> Exiting fullscreen counts as a violation.</li>
-                        <li className="flex items-start gap-3"><span className="font-bold">2. No Tab Switching:</span> Moving to another tab counts as a violation.</li>
-                        <li className="flex items-start gap-3 text-red-700 font-bold"><span className="bg-red-600 text-white px-2 rounded text-sm mr-2">CRITICAL</span> If violations exceed 2, you will be TERMINATED immediately.</li>
-                        <li className="flex items-start gap-3"><span className="font-bold">4. No Re-attempts:</span> Terminated students cannot restart the test.</li>
-                    </div>
-                    <button onClick={enterFullScreenAndStart} className="bg-[#005EB8] text-white px-8 py-4 rounded-xl font-bold text-xl shadow-lg hover:scale-105 flex items-center gap-2 mx-auto transition-all">
-                        <CheckCircle size={24} /> I Agree & Start Test
+                    <h1 className="text-3xl font-bold mb-6">⚠️ Strict Rules</h1>
+                    <ul className="text-left space-y-4 bg-red-50 p-6 rounded-xl border border-red-200 mb-8 text-slate-800">
+                        <li><strong>1. Fullscreen Only:</strong> Exiting triggers a violation.</li>
+                        <li><strong>2. No Tab Switching:</strong> Leaving the tab triggers a violation.</li>
+                        <li className="text-red-600 font-bold">3. Max 2 Violations: The 3rd strike terminates you immediately.</li>
+                    </ul>
+                    <button onClick={enterFullScreenAndStart} className="bg-[#005EB8] text-white px-8 py-4 rounded-xl font-bold">
+                        I Agree & Start
                     </button>
                 </div>
             </div>
         );
     }
 
-    // 5. TERMINATED (Banned)
     if (status === "terminated") {
         return (
             <div className="flex flex-col items-center justify-center h-full bg-red-50 text-red-900 p-10 text-center border-l-8 border-red-600">
                 <AlertCircle size={80} className="text-red-600 mb-6" />
-                <h1 className="text-4xl font-extrabold mb-4">YOU HAVE BEEN TERMINATED</h1>
-                <p className="text-xl max-w-lg mx-auto">You violated the proctoring rules multiple times (tab switching or exiting fullscreen). Your test has been auto-submitted and locked.</p>
-                <div className="mt-8 bg-white p-4 rounded-lg border border-red-200 text-sm font-bold text-red-500">
-                    Review Status: REJECTED due to malpractice.
-                </div>
+                <h1 className="text-4xl font-extrabold mb-4">TERMINATED</h1>
+                <p className="text-xl">You violated the proctoring rules. Access is revoked.</p>
             </div>
         );
     }
 
-    // 6. EXPIRED (Time Up)
     if (status === "expired") {
-        return (
-            <div className="flex flex-col items-center justify-center h-full bg-slate-100 text-slate-600 p-10 text-center">
-                <Clock size={80} className="text-slate-400 mb-6" />
-                <h1 className="text-3xl font-bold mb-4">Test Ended</h1>
-                <p className="text-lg">This test is no longer available.</p>
-                <p className="text-sm mt-2">Thank you for participating.</p>
-            </div>
-        );
+        return <div className="p-10 text-center text-slate-500 font-bold text-xl">Test has ended.</div>;
     }
 
-    // 7. ACTIVE TEST (The Proctoring View)
     if (status === "active") {
         return (
             <div className="fixed inset-0 z-[9999] w-screen h-screen bg-black flex flex-col">
-                {/* PROCTORING WARNING OVERLAY (If they escape fullscreen) */}
                 {!isFullscreen && (
                      <div className="absolute inset-0 z-[10000] bg-black/95 flex flex-col items-center justify-center text-white p-10 text-center">
                         <AlertCircle size={64} className="text-red-500 mb-4 animate-bounce" />
-                        <h2 className="text-3xl font-bold text-red-400 mb-2">⚠️ RETURN TO FULLSCREEN</h2>
-                        <p className="text-lg text-slate-300 max-w-md">You are violating the exam rules. Time is running.</p>
+                        <h2 className="text-3xl font-bold text-red-400 mb-2">RETURN TO FULLSCREEN</h2>
                         <div className="mt-6 font-mono font-bold text-2xl text-white bg-red-600 px-6 py-2 rounded">
-                             Attempts Remaining: {3 - violationCount}
+                             Attempts Remaining: {Math.max(0, 2 - violationCount)}
                         </div>
-                        <button onClick={enterFullScreenAndStart} className="mt-8 bg-white text-black px-8 py-3 rounded-lg font-bold hover:bg-slate-200 transition-colors">
-                            RETURN TO TEST
-                        </button>
+                        <button onClick={enterFullScreenAndStart} className="mt-8 bg-white text-black px-8 py-3 rounded-lg font-bold">RETURN</button>
                      </div>
                 )}
 
-                {/* HEADER BAR */}
                 <div className="h-14 bg-slate-900 border-b border-slate-700 flex justify-between items-center px-6 text-white select-none">
                     <div className="flex items-center gap-4">
-                        <span className="font-bold text-lg text-slate-100">{lesson.title}</span>
-                        <div className="flex items-center gap-2 text-red-400 font-mono text-xs font-bold animate-pulse border border-red-900 bg-red-900/20 px-2 py-1 rounded">
-                            <Radio size={12} /> REC
-                        </div>
+                        <span className="font-bold text-lg">{lesson.title}</span>
+                        <div className="flex items-center gap-2 text-red-400 font-mono text-xs font-bold animate-pulse border border-red-900 bg-red-900/20 px-2 py-1 rounded"><Radio size={12} /> REC</div>
                     </div>
-                    
                     <div className="flex items-center gap-6">
-                        {/* WARNING COUNTER */}
-                        <div className={`flex items-center gap-2 text-sm font-bold px-3 py-1 rounded ${violationCount > 0 ? 'bg-yellow-900/50 text-yellow-400' : 'bg-green-900/30 text-green-400'}`}>
+                        {/* ✅ FIX: Display Max 2 Limit */}
+                        <div className={`flex items-center gap-2 text-sm font-bold px-3 py-1 rounded ${violationCount > 0 ? 'bg-red-900/50 text-red-200' : 'bg-green-900/30 text-green-400'}`}>
                             <AlertCircle size={16} /> 
-                            Warnings: <span className="text-white">{violationCount}</span> / 3
+                            Warnings: {violationCount} / 2
                         </div>
-
-                        {/* STOP CLOCK */}
-                        <div className="flex items-center gap-2 font-mono text-xl font-bold text-white bg-slate-800 px-4 py-1 rounded border border-slate-700">
-                            <Clock size={18} className="text-[#005EB8]" />
-                            {testTimerString}
+                        <div className="flex items-center gap-2 font-mono text-xl font-bold bg-slate-800 px-4 py-1 rounded border border-slate-700">
+                            <Clock size={18} className="text-[#005EB8]" /> {testTimerString}
                         </div>
                     </div>
                 </div>
-
-                {/* TEST CONTENT (IFRAME) */}
-                <iframe 
-                    src={lesson.url} 
-                    className="flex-1 w-full border-none bg-white" 
-                    sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-modals" 
-                />
+                <iframe src={lesson.url} className="flex-1 w-full border-none bg-white" sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-modals" />
             </div>
         );
     }
     
-    return <div className="p-10 text-center">Loading Proctor Status...</div>;
+    return <div className="p-10 text-center">Checking Status...</div>;
 };
 
 // --- MAIN PLAYER COMPONENT (UNTOUCHED) ---
