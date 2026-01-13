@@ -228,7 +228,11 @@ def send_credentials_email(to_email: str, name: str, password: str = None, subje
     sender_email = os.getenv("EMAIL_SENDER")
     sender_password = os.getenv("EMAIL_PASSWORD")
     
-    print(f"🚀 ATTEMPTING EMAIL to: {to_email}")
+    # Brevo SMTP Configuration
+    SMTP_SERVER = "smtp-relay.brevo.com"
+    SMTP_PORT = 587
+    
+    print(f"🚀 [BREVO] Attempting to send to: {to_email}")
 
     if not sender_email or not sender_password:
         print("❌ ERROR: Credentials missing.")
@@ -248,8 +252,9 @@ def send_credentials_email(to_email: str, name: str, password: str = None, subje
     msg.attach(MIMEText(email_content, 'plain'))
 
     try:
-        # ✅ CHANGE: Use SMTP_SSL on Port 465 (Better for Render/Cloud)
-        server = smtplib.SMTP_SSL("smtp.gmail.com", 465)
+        # Brevo uses standard TLS on 587
+        server = smtplib.SMTP(SMTP_SERVER, SMTP_PORT)
+        server.starttls() 
         
         # Login
         server.login(sender_email, sender_password)
@@ -257,12 +262,10 @@ def send_credentials_email(to_email: str, name: str, password: str = None, subje
         # Send
         server.sendmail(sender_email, to_email, msg.as_string())
         server.quit()
-        print(f"✅ SUCCESS: Email sent to {to_email}")
+        print(f"✅ [BREVO] SUCCESS: Email sent to {to_email}")
         
-    except smtplib.SMTPAuthenticationError:
-        print("❌ AUTH ERROR: Google rejected the password. Check for hidden spaces in Render Env Vars.")
     except Exception as e:
-        print(f"❌ CRITICAL EMAIL FAILURE: {str(e)}")
+        print(f"❌ [BREVO] FAILED: {str(e)}")
     
 def upload_file_to_drive(file_obj, filename, folder_link):
     # (Drive logic remains mostly same, executed in thread pool usually by FastAPI)
