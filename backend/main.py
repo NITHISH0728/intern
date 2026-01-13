@@ -28,6 +28,7 @@ import google.generativeai as genai
 import re  
 import schemas
 import random
+import ssl
 from dotenv import load_dotenv
 from pydantic import BaseModel
 # --- 📄 PDF GENERATION IMPORTS ---
@@ -228,11 +229,12 @@ def send_credentials_email(to_email: str, name: str, password: str = None, subje
     sender_email = os.getenv("EMAIL_SENDER")
     sender_password = os.getenv("EMAIL_PASSWORD")
     
-    print(f"🚀 [EMAIL] Attempting to send to: {to_email}", flush=True)
-
+    # 1. Validate Env Vars Immediately
     if not sender_email or not sender_password:
-        print("❌ [EMAIL] ERROR: Credentials missing in environment variables.", flush=True)
-        raise Exception("Missing Email Credentials")
+        print("❌ [EMAIL] ERROR: EMAIL_SENDER or EMAIL_PASSWORD missing in Env Vars.", flush=True)
+        raise Exception("Missing Email Credentials in Server Environment")
+
+    print(f"🚀 [EMAIL] Connecting to Google SMTP for: {to_email}...", flush=True)
 
     msg = MIMEMultipart()
     msg['From'] = sender_email
@@ -242,25 +244,31 @@ def send_credentials_email(to_email: str, name: str, password: str = None, subje
         msg['Subject'] = subject
         email_content = body
     else:
-        msg['Subject'] = "Welcome to iQmath! Your Credentials"
+        msg['Subject'] = "Welcome to iQmath! Your Login Details"
         email_content = f"Welcome {name}!\n\nUser ID: {to_email}\nPassword: {password}\n\nHappy Learning!"
 
     msg.attach(MIMEText(email_content, 'plain'))
 
     try:
-        # ✅ USE SMTP_SSL (Port 465) for Google. 
-        # Standard SMTP (587) often times out on cloud servers.
-        print("...Connecting to Gmail SSL...", flush=True)
-        server = smtplib.SMTP_SSL("smtp.gmail.com", 465)
+        # ✅ FIX 1: Create a secure SSL context (Fixes cloud certificate errors)
+        context = ssl.create_default_context()
+
+        # ✅ FIX 2: Add 'timeout=10' (Prevents the infinite "Processing..." hang)
+        with smtplib.SMTP_SSL("smtp.gmail.com", 465, context=context, timeout=10) as server:
+            print("   ...Logging in...", flush=True)
+            server.login(sender_email, sender_password)
+            
+            print("   ...Sending Data...", flush=True)
+            server.sendmail(sender_email, to_email, msg.as_string())
+            
+        print(f"✅ [EMAIL] SENT SUCCESSFULLY to {to_email}", flush=True)
         
-        server.login(sender_email, sender_password)
-        server.sendmail(sender_email, to_email, msg.as_string())
-        server.quit()
-        print(f"✅ [EMAIL] SUCCESS: Sent to {to_email}", flush=True)
-        
+    except smtplib.SMTPAuthenticationError:
+        print("❌ [EMAIL] AUTH ERROR: Google rejected the password. Check Env Vars for spaces.", flush=True)
+        raise Exception("Google Authentication Failed: Check App Password")
     except Exception as e:
-        print(f"❌ [EMAIL] FAILED: {str(e)}", flush=True)
-        raise e # Re-raise to be caught by the calling function
+        print(f"❌ [EMAIL] CRITICAL FAILURE: {str(e)}", flush=True)
+        raise Exception(f"Connection Error: {str(e)}")
     
 def upload_file_to_drive(file_obj, filename, folder_link):
     # (Drive logic remains mostly same, executed in thread pool usually by FastAPI)
@@ -389,11 +397,23 @@ async def admit_single_student(req: AdmitStudentRequest, db: AsyncSession = Depe
     final_password = req.password if req.password else generate_random_password()
     is_new_user = False
     email_status = "skipped"
-    debug_password = None # Only revealed if email fails
 
     # 2. Create User if New
     if not student:
         is_new_user = True
+        
+        # ✅ CRITICAL: Send Email FIRST. If this fails, we want to know immediately.
+        # Running in a thread to keep it non-blocking but synchronous for the logic flow.
+        try:
+            await asyncio.to_thread(send_credentials_email, req.email, req.full_name, final_password)
+            email_status = "sent"
+        except Exception as e:
+            # If email fails, we STOP here. We do NOT create the user. 
+            # This forces you to fix the email issue instead of creating "broken" users.
+            print(f"❌ Aborting User Creation because Email Failed: {e}")
+            raise HTTPException(status_code=500, detail=f"Email failed: {str(e)}")
+
+        # If email succeeded, NOW create the user
         student = models.User(
             email=req.email, 
             full_name=req.full_name, 
@@ -401,20 +421,10 @@ async def admit_single_student(req: AdmitStudentRequest, db: AsyncSession = Depe
             role="student",
         )
         db.add(student)
-        await db.commit() # ✅ User is saved!
+        await db.commit()
         await db.refresh(student)
-        
-        # 3. 📧 Send Email (Safe Mode)
-        try:
-            await asyncio.to_thread(send_credentials_email, req.email, req.full_name, final_password)
-            email_status = "sent"
-        except Exception as e:
-            print(f"❌ Email Failed inside route: {e}", flush=True)
-            email_status = f"failed: {str(e)}"
-            # 🚨 EMERGENCY BACKUP: If email fails, send password to Admin UI so you aren't locked out
-            debug_password = final_password 
     
-    # 4. Enroll in Courses
+    # 3. Enroll in Courses
     enrolled = []
     for cid in req.course_ids:
         check = await db.execute(select(models.Enrollment).where(models.Enrollment.user_id == student.id, models.Enrollment.course_id == cid))
@@ -424,16 +434,11 @@ async def admit_single_student(req: AdmitStudentRequest, db: AsyncSession = Depe
     
     await db.commit()
 
-    response_payload = {
-        "message": f"User {'created' if is_new_user else 'enrolled'}. Enrolled in {len(enrolled)} courses.", 
-        "email_status": email_status
-    }
-
-    # If email failed for a new user, attach the password to the response
-    if debug_password:
-        response_payload["manual_password_backup"] = debug_password
-
-    return response_payload
+    if is_new_user:
+        return {"message": f"User created & Email Sent! Enrolled in {len(enrolled)} courses.", "email_status": email_status}
+    else:
+        return {"message": f"Existing user enrolled.", "email_status": email_status}
+    
 @app.post("/api/v1/admin/bulk-admit")
 async def bulk_admit_students(file: UploadFile = File(...), course_id: int = Form(...), db: AsyncSession = Depends(get_db), current_user: models.User = Depends(require_instructor)):
     contents = await file.read()
