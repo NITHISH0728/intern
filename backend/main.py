@@ -15,6 +15,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from celery_config import celery_app        # <--- Ensure this is here
 from celery.result import AsyncResult
+import requests
 import io
 import json
 import os
@@ -226,50 +227,68 @@ def generate_random_password(length=8):
 # In backend/main.py
 
 def send_credentials_email(to_email: str, name: str, password: str = None, subject: str = None, body: str = None):
+    # 1. Get Config
+    api_key = os.getenv("BREVO_API_KEY")
     sender_email = os.getenv("EMAIL_SENDER")
-    sender_password = os.getenv("EMAIL_PASSWORD")
     
-    # 1. Validate Env Vars Immediately
-    if not sender_email or not sender_password:
-        print("❌ [EMAIL] ERROR: EMAIL_SENDER or EMAIL_PASSWORD missing in Env Vars.", flush=True)
-        raise Exception("Missing Email Credentials in Server Environment")
+    print(f"🚀 [BREVO API] Preparing to send to: {to_email}")
 
-    print(f"🚀 [EMAIL] Connecting to Google SMTP for: {to_email}...", flush=True)
+    if not api_key or not sender_email:
+        print("❌ ERROR: BREVO_API_KEY or EMAIL_SENDER missing.")
+        return
 
-    msg = MIMEMultipart()
-    msg['From'] = sender_email
-    msg['To'] = to_email
+    # 2. Define the URL (Port 443 - Bypasses Render Firewall)
+    url = "https://api.brevo.com/v3/smtp/email"
+
+    # 3. Construct Content
+    if not subject:
+        subject = "Welcome to iQmath! Your Credentials"
     
-    if subject and body:
-        msg['Subject'] = subject
-        email_content = body
+    if not body:
+        html_content = f"""
+        <html>
+        <body>
+            <h1>Welcome {name}!</h1>
+            <p>You have been admitted to iQmath Pro.</p>
+            <p><strong>User ID:</strong> {to_email}</p>
+            <p><strong>Password:</strong> {password}</p>
+            <br/>
+            <p>Happy Learning!</p>
+        </body>
+        </html>
+        """
     else:
-        msg['Subject'] = "Welcome to iQmath! Your Login Details"
-        email_content = f"Welcome {name}!\n\nUser ID: {to_email}\nPassword: {password}\n\nHappy Learning!"
+        # If body is passed from OTP logic
+        html_content = f"<p>{body}</p>".replace("\n", "<br>")
 
-    msg.attach(MIMEText(email_content, 'plain'))
+    # 4. Create Payload
+    payload = {
+        "sender": {"name": "iQmath Admin", "email": sender_email},
+        "to": [{"email": to_email, "name": name}],
+        "subject": subject,
+        "htmlContent": html_content
+    }
 
+    headers = {
+        "accept": "application/json",
+        "api-key": api_key,
+        "content-type": "application/json"
+    }
+
+    # 5. Send Request
     try:
-        # ✅ FIX 1: Create a secure SSL context (Fixes cloud certificate errors)
-        context = ssl.create_default_context()
-
-        # ✅ FIX 2: Add 'timeout=10' (Prevents the infinite "Processing..." hang)
-        with smtplib.SMTP_SSL("smtp.gmail.com", 465, context=context, timeout=10) as server:
-            print("   ...Logging in...", flush=True)
-            server.login(sender_email, sender_password)
-            
-            print("   ...Sending Data...", flush=True)
-            server.sendmail(sender_email, to_email, msg.as_string())
-            
-        print(f"✅ [EMAIL] SENT SUCCESSFULLY to {to_email}", flush=True)
+        response = requests.post(url, json=payload, headers=headers, timeout=10)
         
-    except smtplib.SMTPAuthenticationError:
-        print("❌ [EMAIL] AUTH ERROR: Google rejected the password. Check Env Vars for spaces.", flush=True)
-        raise Exception("Google Authentication Failed: Check App Password")
+        if response.status_code == 201:
+            print(f"✅ [BREVO API] SUCCESS: Email sent! ID: {response.json().get('messageId')}")
+        else:
+            print(f"❌ [BREVO API] FAILED: {response.status_code} - {response.text}")
+            # Raise exception so the calling function knows it failed
+            raise Exception(f"API Error: {response.text}")
+            
     except Exception as e:
-        print(f"❌ [EMAIL] CRITICAL FAILURE: {str(e)}", flush=True)
-        raise Exception(f"Connection Error: {str(e)}")
-    
+        print(f"❌ [BREVO API] NETWORK ERROR: {str(e)}")
+        raise e  
 def upload_file_to_drive(file_obj, filename, folder_link):
     # (Drive logic remains mostly same, executed in thread pool usually by FastAPI)
     try:
