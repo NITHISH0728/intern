@@ -430,40 +430,72 @@ async def admit_single_student(req: AdmitStudentRequest, db: AsyncSession = Depe
     else:
         return {"message": f"Existing user enrolled in {len(enrolled)} courses."}
 
+# In main.py
+
 @app.post("/api/v1/admin/bulk-admit")
 async def bulk_admit_students(file: UploadFile = File(...), course_id: int = Form(...), db: AsyncSession = Depends(get_db), current_user: models.User = Depends(require_instructor)):
     contents = await file.read()
     try:
         df = pd.read_csv(io.BytesIO(contents)) if file.filename.endswith('.csv') else pd.read_excel(io.BytesIO(contents))
-    except: raise HTTPException(status_code=400, detail="Invalid file")
+    except: 
+        raise HTTPException(status_code=400, detail="Invalid file format. Please upload CSV or Excel.")
     
+    # Normalize headers
     df.columns = [c.lower().strip() for c in df.columns]
-    if "email" not in df.columns: raise HTTPException(status_code=400, detail="Missing 'email' column")
+    if "email" not in df.columns: 
+        raise HTTPException(status_code=400, detail="Missing 'email' column in file.")
     
     count = 0
+    email_tasks = [] # Store email tasks to run later
+
     for _, row in df.iterrows():
         email = str(row["email"]).strip()
         name = str(row.get("name", "Student"))
-        if not email or email == "nan": continue
         
+        if not email or email.lower() == "nan": continue
+        
+        # 1. Check if user exists
         res = await db.execute(select(models.User).where(models.User.email == email))
         student = res.scalars().first()
         
         if not student:
+            # Create new student
             bulk_password = generate_random_password()
-            student = models.User(email=email, full_name=name, hashed_password=get_password_hash(bulk_password), role="student")
+            student = models.User(
+                email=email, 
+                full_name=name, 
+                hashed_password=get_password_hash(bulk_password), 
+                role="student"
+            )
             db.add(student)
             await db.commit()
             await db.refresh(student)
-            send_credentials_email(email, name, bulk_password)
+            
+            # ✅ OPTIMIZATION: Add email to a task list (don't block the loop)
+            email_tasks.append((email, name, bulk_password))
         
-        enrol_check = await db.execute(select(models.Enrollment).where(models.Enrollment.user_id == student.id, models.Enrollment.course_id == course_id))
+        # 2. Enroll in Course
+        enrol_check = await db.execute(select(models.Enrollment).where(
+            models.Enrollment.user_id == student.id, 
+            models.Enrollment.course_id == course_id
+        ))
+        
         if not enrol_check.scalars().first():
             db.add(models.Enrollment(user_id=student.id, course_id=course_id))
             count += 1
     
     await db.commit()
-    return {"message": f"Enrolled {count} students"}
+
+    # 3. 🚀 Send Emails in Background (Non-blocking)
+    # This prevents the request from timing out if you upload 100 students
+    for email, name, password in email_tasks:
+        try:
+            # Run each email in a thread
+            await asyncio.to_thread(send_credentials_email, email, name, password)
+        except Exception as e:
+            print(f"Failed to email {email}: {e}")
+
+    return {"message": f"Successfully enrolled {count} students. Emails are being sent."}
 
 @app.post("/api/v1/ai/generate-challenge") # 👈 Changed from "/generate" to match Frontend
 async def generate_problem_content(req: AIGenerateRequest):
