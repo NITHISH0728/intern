@@ -393,7 +393,7 @@ async def admit_single_student(req: AdmitStudentRequest, db: AsyncSession = Depe
     
     final_password = req.password if req.password else generate_random_password()
     is_new_user = False
-    email_status = "skipped"  # Default value prevents "UnboundLocalError"
+    email_status = "skipped"
 
     # 2. Create User if New
     if not student:
@@ -408,15 +408,15 @@ async def admit_single_student(req: AdmitStudentRequest, db: AsyncSession = Depe
         await db.commit()
         await db.refresh(student)
         
-        # 3. 📧 Send Email (ONLY for New Users)
-        # ✅ INDENTATION FIXED: This block is now inside the 'if'
+        # 3. 📧 Send Email (SAFE MODE)
+        # We try to send email, but if it fails, we DO NOT crash the request.
         try:
             email_status = "sent"
             await asyncio.to_thread(send_credentials_email, req.email, req.full_name, final_password)
         except Exception as e:
             print(f"❌ Email Failed: {e}")
             email_status = f"failed: {str(e)}"
-            # We catch the error so the request doesn't fail, but we record the status
+            # We continue execution so the student is still enrolled
     
     # 4. Enroll in Courses
     enrolled = []
@@ -434,10 +434,7 @@ async def admit_single_student(req: AdmitStudentRequest, db: AsyncSession = Depe
             "email_status": email_status
         }
     else:
-        return {
-            "message": f"Existing user enrolled in {len(enrolled)} new courses.", 
-            "email_status": email_status
-        }
+        return {"message": f"Existing user enrolled in {len(enrolled)} courses.", "email_status": "skipped"}
 # In main.py
 
 @app.post("/api/v1/admin/bulk-admit")
