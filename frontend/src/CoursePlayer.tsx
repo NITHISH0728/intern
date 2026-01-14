@@ -844,7 +844,7 @@ const CoursePlayer = () => {
   const { courseId } = useParams();
   const navigate = useNavigate();
   const [course, setCourse] = useState<any>(null);
-  const [loading, setLoading] = useState(true);
+  const [loading] = useState(true);
   const [activeLesson, setActiveLesson] = useState<any>(null);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [expandedModules, setExpandedModules] = useState<number[]>([]);
