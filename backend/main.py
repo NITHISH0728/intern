@@ -331,36 +331,61 @@ def create_certificate_pdf(student_name: str, course_name: str, date_str: str):
     c.showPage(); c.save(); buffer.seek(0); return buffer
 
 # --- 🔄 ASYNC LOGIC HELPERS ---
-async def check_and_award_certificate(user_id: int, course_id: int, db: AsyncSession):
-    # Async Query for Modules
-    result = await db.execute(select(models.Module).where(models.Module.course_id == course_id).options(selectinload(models.Module.items)))
-    modules = result.scalars().all()
+# --- 🔄 UPDATED LOGIC: Strict 100% Completion Check ---
+async def check_progress_status(user_id: int, course_id: int, db: AsyncSession):
+    """
+    Returns (completed_count, total_count, is_fully_completed)
+    """
+    # 1. Get ALL items in the course
+    # We join Course -> Module -> ContentItem to get the total list
+    result = await db.execute(
+        select(models.ContentItem.id)
+        .join(models.Module, models.ContentItem.module_id == models.Module.id)
+        .where(models.Module.course_id == course_id)
+    )
+    all_item_ids = result.scalars().all()
+    total_items = len(all_item_ids)
     
-    if not modules: return False
+    if total_items == 0:
+        return 0, 0, False
 
-    # Async Query for Progress
-    progress_result = await db.execute(select(models.LessonProgress).where(models.LessonProgress.user_id == user_id, models.LessonProgress.is_completed == True))
-    progress_records = progress_result.scalars().all()
-    completed_ids = {p.content_item_id for p in progress_records}
+    # 2. Get User's Completed Items
+    # We filter LessonProgress for this user and these specific items
+    progress_res = await db.execute(
+        select(models.LessonProgress.content_item_id)
+        .where(
+            models.LessonProgress.user_id == user_id, 
+            models.LessonProgress.is_completed == True,
+            models.LessonProgress.content_item_id.in_(all_item_ids)
+        )
+    )
+    completed_ids = progress_res.scalars().all()
+    completed_count = len(completed_ids)
 
-    modules_completed_count = 0
-    for mod in modules:
-        assignment = next((item for item in mod.items if item.type == 'assignment'), None)
-        if assignment:
-            if assignment.id in completed_ids: modules_completed_count += 1
-        else:
-            modules_completed_count += 1 # Auto-complete if no assignment
+    # 3. Check if 100% complete
+    is_fully_completed = completed_count == total_items
+    
+    return completed_count, total_items, is_fully_completed
 
-    if modules_completed_count >= len(modules) and len(modules) > 0:
-        cert_check = await db.execute(select(models.UserCertificate).where(models.UserCertificate.user_id == user_id, models.UserCertificate.course_id == course_id))
-        if not cert_check.scalars().first():
-            import uuid
-            new_cert = models.UserCertificate(user_id=user_id, course_id=course_id, certificate_id=str(uuid.uuid4())[:8].upper())
-            db.add(new_cert)
-            await db.commit()
-            return True
-    return False
+async def generate_certificate_record(user_id: int, course_id: int, db: AsyncSession):
+    # Check if cert already exists
+    cert_check = await db.execute(select(models.UserCertificate).where(
+        models.UserCertificate.user_id == user_id, 
+        models.UserCertificate.course_id == course_id
+    ))
+    if cert_check.scalars().first():
+        return True # Already exists
 
+    # Create new cert
+    import uuid
+    new_cert = models.UserCertificate(
+        user_id=user_id, 
+        course_id=course_id, 
+        certificate_id=str(uuid.uuid4())[:8].upper()
+    )
+    db.add(new_cert)
+    await db.commit()
+    return True
 # --- 🚀 ASYNC API ENDPOINTS ---
 
 @app.post("/api/v1/users", status_code=201)
@@ -1082,6 +1107,48 @@ async def execute_code(payload: CodePayload):
     )
     
     return {"task_id": task.id, "message": "Batch Execution Queued"}
+
+
+# --- ✅ COMPLETION LOGIC ENDPOINTS ---
+
+# 1. Toggle Item Completion (The Green Tick)
+@app.post("/api/v1/content/{item_id}/complete")
+async def mark_item_complete(item_id: int, db: AsyncSession = Depends(get_db), current_user: models.User = Depends(get_current_user)):
+    # Check if progress record exists
+    res = await db.execute(select(models.LessonProgress).where(
+        models.LessonProgress.user_id == current_user.id, 
+        models.LessonProgress.content_item_id == item_id
+    ))
+    progress = res.scalars().first()
+
+    if not progress:
+        # Create new record as completed
+        progress = models.LessonProgress(user_id=current_user.id, content_item_id=item_id, is_completed=True)
+        db.add(progress)
+    else:
+        # If it exists, ensure it is true (or toggle if you prefer, but usually 'mark as read' is one-way or explicit)
+        progress.is_completed = True
+        
+    await db.commit()
+    return {"message": "Marked as complete", "status": "success"}
+
+
+# 2. Final Course Completion (The "Complete Course" Button)
+@app.post("/api/v1/courses/{course_id}/claim-certificate")
+async def claim_course_certificate(course_id: int, db: AsyncSession = Depends(get_db), current_user: models.User = Depends(get_current_user)):
+    # 1. Verify strict 100% completion
+    completed, total, is_done = await check_progress_status(current_user.id, course_id, db)
+    
+    if not is_done:
+        return {
+            "status": "error", 
+            "message": f"Course incomplete. You have finished {completed}/{total} items. Please complete all modules first."
+        }
+
+    # 2. Generate Certificate
+    await generate_certificate_record(current_user.id, course_id, db)
+    
+    return {"status": "success", "message": "Certificate Generated!", "certificate_ready": True}
     
    
 

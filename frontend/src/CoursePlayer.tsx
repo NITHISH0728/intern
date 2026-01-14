@@ -9,8 +9,10 @@ import {
   PlayCircle, FileText, ChevronLeft, Menu, Code, HelpCircle, 
   UploadCloud, Play, Save, Monitor, Cpu, ChevronDown, ChevronRight, CreditCard,
   File as FileIcon, X, CheckCircle, Radio, Lock, ArrowLeft, AlertCircle, Clock, 
-  Zap, Check // <--- Added 'Check' icon here
+  Zap, Check, CheckSquare, Square, CheckCheck, Award // <--- Added 'Check' icon here
 } from "lucide-react";
+
+
 
 
 // --- 🍞 SHARED TOAST COMPONENT (Unchanged) ---
@@ -837,19 +839,22 @@ const LiveTestProctor = ({ lesson }: { lesson: any }) => {
 };
 
 // --- MAIN PLAYER COMPONENT (UNTOUCHED) ---
+// --- 🔵 MAIN PLAYER COMPONENT (Updated with Completion Logic) ---
 const CoursePlayer = () => {
   const { courseId } = useParams();
   const navigate = useNavigate();
   const [course, setCourse] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
   const [activeLesson, setActiveLesson] = useState<any>(null);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [expandedModules, setExpandedModules] = useState<number[]>([]);
   const [isTransitioning, setIsTransitioning] = useState(false);
-  // File Upload State
   const [assignmentFile, setAssignmentFile] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
+  
+  // ✅ 1. ADD: State to trigger re-renders when items are marked complete
+  const [refreshTrigger, setRefreshTrigger] = useState(0);
 
-  // ✅ Toast State
   const [toast, setToast] = useState({ show: false, message: "", type: "success" });
   const triggerToast = (message: string, type: "success" | "error" = "success") => {
     setToast({ show: true, message, type });
@@ -870,64 +875,57 @@ const CoursePlayer = () => {
             description: "Lifetime Course Access",
             order_id: data.id, 
             handler: function (response: any) { 
-                triggerToast(`Payment Successful! ID: ${response.razorpay_payment_id}`, "success"); // ✅ Replaced Alert
+                triggerToast(`Payment Successful! ID: ${response.razorpay_payment_id}`, "success"); 
             },
             theme: { color: "#87C232" }
         };
         const rzp1 = new (window as any).Razorpay(options);
         rzp1.open();
     } catch (error) { 
-        triggerToast("Payment init failed", "error"); // ✅ Replaced Alert
+        triggerToast("Payment init failed", "error");
     }
   };
 
+  // ✅ 2. UPDATE: Added refreshTrigger to dependency array
   useEffect(() => {
     const fetchCourse = async () => {
       try {
         const token = localStorage.getItem("token");
-       const res = await axios.get(`${API_BASE_URL}/courses/${courseId}/player`, { headers: { Authorization: `Bearer ${token}` } }); setCourse(res.data);
-        if (res.data.modules?.[0]) {
+        const res = await axios.get(`${API_BASE_URL}/courses/${courseId}/player`, { headers: { Authorization: `Bearer ${token}` } }); 
+        setCourse(res.data);
+        
+        // Auto-select first lesson if none selected
+        if (res.data.modules?.[0] && !activeLesson) {
             setExpandedModules([res.data.modules[0].id]); 
             if (res.data.modules[0].lessons?.length > 0) setActiveLesson(res.data.modules[0].lessons[0]);
         }
       } catch (err) { console.error(err); }
     };
     fetchCourse();
-  }, [courseId]);
+  }, [courseId, refreshTrigger]); 
 
   useEffect(() => {
     if (activeLesson) {
         setIsTransitioning(true);
-        // 500ms delay to force the old player to destroy completely
         const timer = setTimeout(() => {
             setIsTransitioning(false);
         }, 500); 
         return () => clearTimeout(timer);
     }
-}, [activeLesson?.id]);
+  }, [activeLesson?.id]);
 
   const toggleModule = (moduleId: number) => setExpandedModules(prev => prev.includes(moduleId) ? prev.filter(id => id !== moduleId) : [...prev, moduleId]);
   
   const getEmbedUrl = (url: string) => {
     if (!url) return "";
-    
-    // 1. Handle Google Forms (Existing Logic)
     if (url.includes("docs.google.com/forms")) {
         return url.replace(/\/viewform.*/, "/viewform?embedded=true").replace(/\/view.*/, "/viewform?embedded=true");
     }
-
-    // 2. ✅ NEW: Handle Google App Scripts
-    // We return the URL exactly as is. We do NOT want to add '/preview' to it.
     if (url.includes("script.google.com")) {
         return url; 
     }
-
-    // 3. Handle Google Drive Files (PDFs/Docs)
-    // This replaces /view with /preview for clean embedding
     return url.replace("/view", "/preview");
   };
-
-  
 
   const plyrOptions = useMemo(() => ({
     controls: ['play-large', 'play', 'progress', 'current-time', 'mute', 'volume', 'fullscreen'],
@@ -940,18 +938,12 @@ const CoursePlayer = () => {
     const token = localStorage.getItem("token");
 
     try {
-        // 1. Create FormData to send file + data together
         const formData = new FormData();
-        formData.append("file", assignmentFile);           // The file object
-        formData.append("lesson_title", activeLesson.title); // The lesson title (Required by backend)
+        formData.append("file", assignmentFile);
+        formData.append("lesson_title", activeLesson.title);
 
-        // 2. Send directly to your backend endpoint
-        // NOTE: No need for '/get-upload-url' or '/confirm-submission' anymore
         await axios.post(`${API_BASE_URL}/submit-assignment`, formData, {
-            headers: { 
-                "Authorization": `Bearer ${token}`,
-                // Axios automatically sets Content-Type to multipart/form-data when it sees FormData
-            },
+            headers: { "Authorization": `Bearer ${token}` },
             onUploadProgress: (progressEvent) => {
                 if (progressEvent.total) {
                     const percent = Math.round((progressEvent.loaded * 100) / progressEvent.total);
@@ -960,9 +952,10 @@ const CoursePlayer = () => {
             }
         });
         
-        // 3. Success Handling
         triggerToast(`✅ Assignment "${assignmentFile.name}" Submitted Successfully!`, "success");
         setAssignmentFile(null); 
+        // ✅ Refresh UI to show tick mark
+        setRefreshTrigger(prev => prev + 1);
 
     } catch (err) {
         console.error("Upload Error:", err);
@@ -972,68 +965,89 @@ const CoursePlayer = () => {
     }
   };
 
- // 👇 REPLACE YOUR ENTIRE renderContent FUNCTION WITH THIS:
-const renderContent = () => {
+  // ✅ 3. ADD: Logic to Mark Items as Complete
+  const handleToggleComplete = async (lesson: any) => {
+      try {
+          const token = localStorage.getItem("token");
+          await axios.post(`${API_BASE_URL}/content/${lesson.id}/complete`, {}, {
+              headers: { Authorization: `Bearer ${token}` }
+          });
+          
+          triggerToast(lesson.is_completed ? "Marked as Incomplete" : "Marked as Complete!", "success");
+          setRefreshTrigger(prev => prev + 1); 
+      } catch (err) {
+          triggerToast("Failed to update status", "error");
+      }
+  };
+
+  // ✅ 4. ADD: Logic to Claim Certificate
+  const handleClaimCertificate = async () => {
+      try {
+          const token = localStorage.getItem("token");
+          const res = await axios.post(`${API_BASE_URL}/courses/${courseId}/claim-certificate`, {}, {
+               headers: { Authorization: `Bearer ${token}` }
+          });
+          
+          if(res.data.status === "success") {
+              triggerToast("🎉 Certificate Generated Successfully!", "success");
+              setTimeout(() => navigate("/student-dashboard"), 2000);
+          } else {
+              triggerToast(res.data.message || "Course not yet complete.", "error");
+          }
+      } catch (err) {
+          triggerToast("Failed to claim certificate.", "error");
+      }
+  };
+
+  // ✅ 5. ADD: Check if entire course is done
+  const isCourseFullyComplete = useMemo(() => {
+      if(!course) return false;
+      return course.modules.every((m: any) => 
+          m.lessons.every((l: any) => l.is_completed)
+      );
+  }, [course]);
+
+  // ✅ 6. UPDATE: renderContent now has the Checkbox Header
+  const renderContent = () => {
     if (!activeLesson) return <div className="text-white p-10 text-center">Select a lesson</div>;
     
-    // 1. SHOW LOADING SCREEN DURING TRANSITION
     if (isTransitioning) {
         return (
             <div className="w-full h-full flex flex-col items-center justify-center bg-slate-900 text-white gap-4">
-                {/* Simple Spinner */}
                 <div className="w-10 h-10 border-4 border-[#005EB8] border-t-transparent rounded-full animate-spin"></div>
                 <p className="text-sm font-bold tracking-wider animate-pulse text-slate-400">LOADING...</p>
             </div>
         );
     }
 
-    // 2. STANDARD CONTENT RENDERING (Your existing logic)
-    if (activeLesson.type === "note") return <iframe src={getEmbedUrl(activeLesson.url)} width="100%" height="100%" className="bg-white border-0" allow="autoplay" />;
-    
-   if (activeLesson.type === "quiz") {
-        return (
-            <div className="w-full h-full bg-slate-50 flex flex-col items-center justify-center p-4">
-                <iframe 
-                    src={getEmbedUrl(activeLesson.url)} 
-                    width="100%" 
-                    height="100%" 
-                    frameBorder="0" 
-                    className="rounded-xl shadow-sm border border-slate-200 bg-white max-w-4xl" 
-                    allowFullScreen
-                    // ✅ NEW: These permissions ensure App Scripts run smoothly
-                    sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-top-navigation"
-                >
-                    Loading...
-                </iframe>
+    // -- Header with Checkbox --
+    const completionHeader = (
+        <div className="bg-slate-50 border-b border-slate-200 p-4 flex justify-between items-center">
+            <h3 className="font-bold text-slate-800">{activeLesson.title}</h3>
+            <div 
+                onClick={() => handleToggleComplete(activeLesson)}
+                className={`flex items-center gap-2 px-4 py-2 rounded-lg cursor-pointer transition-all border ${activeLesson.is_completed ? "bg-green-100 border-green-300 text-green-700" : "bg-white border-slate-300 text-slate-500 hover:bg-slate-100"}`}
+            >
+                {activeLesson.is_completed ? <CheckSquare size={20} /> : <Square size={20} />}
+                <span className="text-sm font-bold">{activeLesson.is_completed ? "Completed" : "Mark as Complete"}</span>
             </div>
-        );
-    }
-    
-    if (activeLesson.type === "video" || activeLesson.type === "live_class") {
-    // This calls the helper component we created at the top of the file
-    return (
-        <DelayedVideoPlayer 
-            key={activeLesson.id} 
-            lesson={activeLesson} 
-            plyrOptions={plyrOptions} 
-        />
+        </div>
     );
-}
-    
-    if (activeLesson.type === "live_test") {
-    return <LiveTestProctor lesson={activeLesson} />; 
 
-}
-    if (activeLesson.type === "code_test") return <CodeCompiler lesson={activeLesson} />;
-    
-    if (activeLesson.type === "assignment") {
-      return (
+    let contentBody = null;
+    if (activeLesson.type === "note") contentBody = <iframe src={getEmbedUrl(activeLesson.url)} width="100%" height="100%" className="bg-white border-0" allow="autoplay" />;
+    else if (activeLesson.type === "quiz") contentBody = ( <div className="w-full h-full bg-slate-50 flex flex-col items-center justify-center p-4"><iframe src={getEmbedUrl(activeLesson.url)} width="100%" height="100%" frameBorder="0" className="rounded-xl shadow-sm border border-slate-200 bg-white max-w-4xl" allowFullScreen sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-top-navigation">Loading...</iframe></div> );
+    else if (activeLesson.type === "video" || activeLesson.type === "live_class") contentBody = <DelayedVideoPlayer key={activeLesson.id} lesson={activeLesson} plyrOptions={plyrOptions} />;
+    else if (activeLesson.type === "live_test") contentBody = <LiveTestProctor lesson={activeLesson} />;
+    else if (activeLesson.type === "code_test") contentBody = <CodeCompiler lesson={activeLesson} />;
+    else if (activeLesson.type === "assignment") {
+      contentBody = (
         <div className="flex flex-col items-center justify-center h-full bg-[#F8FAFC] p-8 font-sans text-slate-800">
             <div className="bg-white p-10 rounded-2xl shadow-xl max-w-2xl w-full text-center border border-slate-100">
                 <div className="w-20 h-20 bg-blue-50 rounded-full flex items-center justify-center mx-auto mb-6"><UploadCloud size={40} className="text-[#005EB8]" /></div>
                 <h2 className="text-2xl font-bold text-slate-800 mb-2">{activeLesson.title}</h2>
                 {activeLesson.is_mandatory && (<span className="inline-block bg-red-100 text-red-600 text-xs font-bold px-3 py-1 rounded-full mb-4">MANDATORY SUBMISSION</span>)}
-                <p className="text-slate-600 mb-8 leading-relaxed whitespace-pre-wrap text-sm">{activeLesson.instructions || activeLesson.description || "Upload your assignment below. Supported formats: PDF, DOCX, ZIP."}</p>
+                <p className="text-slate-600 mb-8 leading-relaxed whitespace-pre-wrap text-sm">{activeLesson.instructions || activeLesson.description || "Upload your assignment below."}</p>
                 <div className="mb-8">
                     {!assignmentFile ? (
                         <div className="border-2 border-dashed border-slate-300 rounded-xl p-8 bg-slate-50 hover:bg-slate-100 transition-all cursor-pointer relative group">
@@ -1054,19 +1068,22 @@ const renderContent = () => {
         </div>
       );
     }
-    return <div className="text-white p-10 text-center">Select content from the sidebar</div>;
-};
+    else contentBody = <div className="p-10 text-center">Unknown Content Type</div>;
 
-  // ✅ CHECK: If Coding Course, Switch Player View completely
-  if (course?.course_type === "coding") {
-      const token = localStorage.getItem("token") || "";
-      return <CodingPlayer course={course} token={token} />;
-  }
+    return (
+        <div className="flex flex-col h-full">
+            {completionHeader}
+            <div className="flex-1 overflow-hidden relative">{contentBody}</div>
+        </div>
+    );
+  };
 
-  // --- STANDARD PLAYER RENDER ---
+  if(loading) return <div>Loading...</div>;
+  if(course?.course_type === "coding") return <CodingPlayer course={course} token={localStorage.getItem("token") || ""} />;
+  
   return (
     <div className="flex h-screen w-screen overflow-hidden font-sans bg-slate-900 relative">
-      <ToastNotification toast={toast} setToast={setToast} /> {/* ✅ Toast Rendered */}
+      <ToastNotification toast={toast} setToast={setToast} /> 
       
       <div className="flex-1 flex flex-col h-full">
         <header className="h-16 bg-white border-b border-slate-200 flex items-center px-6 justify-between z-10">
@@ -1082,55 +1099,77 @@ const renderContent = () => {
         </header>
         <div className="flex-1 bg-white relative overflow-hidden">{renderContent()}</div>
       </div>
+
+      {/* ✅ 7. UPDATE: Sidebar with Module Check Logic */}
       {sidebarOpen && (
         <aside className="w-80 bg-white border-l border-slate-200 flex flex-col h-full">
            <div className="p-6 border-b border-slate-200"><h2 className="text-sm font-extrabold text-slate-900 uppercase tracking-widest m-0">Course Content</h2></div>
            <div className="flex-1 overflow-y-auto p-0">
-             {course?.modules.map((module: any, idx: number) => (
-                <div key={module.id} className="border-b border-slate-100">
-                  <div onClick={() => toggleModule(module.id)} className="p-4 bg-slate-50 cursor-pointer flex justify-between items-center hover:bg-slate-100 transition-colors">
-                    <div className="flex items-center gap-3">
-                        {module.is_completed ? (
-                            <div className="bg-[#87C232] rounded-full p-1 text-white"><CheckCircle size={20} fill="white" className="text-[#87C232]" /></div>
-                        ) : (
-                            <div className="w-8 h-8 rounded-full bg-slate-200 flex items-center justify-center text-xs font-bold text-slate-500">{idx + 1}</div>
-                        )}
-                        <div>
-                            <div className="text-[11px] font-bold text-slate-500 uppercase">{module.is_completed ? "Completed" : `Section ${idx + 1}`}</div>
-                            <div className={`text-sm font-semibold ${module.is_completed ? "text-slate-400 line-through" : "text-slate-800"}`}>{module.title}</div>
+             {course?.modules.map((module: any, idx: number) => {
+                // ✅ Check if module is fully complete
+                const isModuleComplete = module.lessons.length > 0 && module.lessons.every((l:any) => l.is_completed);
+
+                return (
+                    <div key={module.id} className="border-b border-slate-100">
+                      <div onClick={() => toggleModule(module.id)} className={`p-4 cursor-pointer flex justify-between items-center transition-colors ${isModuleComplete ? "bg-blue-50/50" : "bg-slate-50 hover:bg-slate-100"}`}>
+                        <div className="flex items-center gap-3">
+                            {/* ✅ Blue Double Tick */}
+                            {isModuleComplete ? (
+                                <div className="bg-blue-100 rounded-full p-1 text-[#005EB8]"><CheckCheck size={18} strokeWidth={3} /></div>
+                            ) : (
+                                <div className="w-8 h-8 rounded-full bg-slate-200 flex items-center justify-center text-xs font-bold text-slate-500">{idx + 1}</div>
+                            )}
+                            <div>
+                                <div className={`text-[11px] font-bold uppercase ${isModuleComplete ? "text-[#005EB8]" : "text-slate-500"}`}>{isModuleComplete ? "Completed" : `Section ${idx + 1}`}</div>
+                                <div className={`text-sm font-semibold ${module.is_completed ? "text-slate-400 line-through" : "text-slate-800"}`}>{module.title}</div>
+                            </div>
                         </div>
-                    </div>
-                    {expandedModules.includes(module.id) ? <ChevronDown size={18} color="#64748b" /> : <ChevronRight size={18} color="#64748b" />}
-                  </div>
-                  {expandedModules.includes(module.id) && (
-                    <div className="animate-fade-in">
-                      {module.lessons.map((lesson: any) => {
-                          const isActive = activeLesson?.id === lesson.id;
-                          return (
-                              <div key={lesson.id} onClick={() => setActiveLesson(lesson)} className={`flex items-center gap-3 p-3 pl-12 cursor-pointer border-l-4 transition-all ${isActive ? 'bg-blue-50 border-blue-600' : 'bg-white border-transparent hover:bg-slate-50'}`}>
-                                  <div className={isActive ? "text-blue-600" : "text-slate-400"}>
-                                      {lesson.is_completed ? (
-                                           <CheckCircle size={16} className="text-[#87C232]" fill="#ecfccb" />
-                                      ) : (
-                                          <>
-                                              {lesson.type.includes("video") && <PlayCircle size={16} />}
-                                              {lesson.type === "note" && <FileText size={16} />}
-                                              {lesson.type === "quiz" && <HelpCircle size={16} />} 
-                                              {lesson.type.includes("code") && <Code size={16} />}
-                                              {lesson.type === "assignment" && <UploadCloud size={16} />}
-                                              {lesson.type === "live_class" && <Radio size={16} />}
-                                          </>
-                                      )}
+                        {expandedModules.includes(module.id) ? <ChevronDown size={18} color="#64748b" /> : <ChevronRight size={18} color="#64748b" />}
+                      </div>
+                      
+                      {expandedModules.includes(module.id) && (
+                        <div className="animate-fade-in">
+                          {module.lessons.map((lesson: any) => {
+                              const isActive = activeLesson?.id === lesson.id;
+                              return (
+                                  <div key={lesson.id} onClick={() => setActiveLesson(lesson)} className={`flex items-center gap-3 p-3 pl-12 cursor-pointer border-l-4 transition-all ${isActive ? 'bg-blue-50 border-blue-600' : 'bg-white border-transparent hover:bg-slate-50'}`}>
+                                      <div className={isActive ? "text-blue-600" : "text-slate-400"}>
+                                          {lesson.is_completed ? (
+                                               <CheckCircle size={16} className="text-[#87C232]" fill="#ecfccb" />
+                                          ) : (
+                                              <>
+                                                  {lesson.type.includes("video") && <PlayCircle size={16} />}
+                                                  {lesson.type === "note" && <FileText size={16} />}
+                                                  {lesson.type === "quiz" && <HelpCircle size={16} />} 
+                                                  {lesson.type.includes("code") && <Code size={16} />}
+                                                  {lesson.type === "assignment" && <UploadCloud size={16} />}
+                                                  {lesson.type === "live_class" && <Radio size={16} />}
+                                              </>
+                                          )}
+                                      </div>
+                                      <div className={`text-sm flex-1 ${isActive ? "text-blue-600 font-semibold" : "text-slate-600"} ${lesson.is_completed ? "line-through text-slate-400 decoration-slate-300" : ""}`}>{lesson.title}</div>
                                   </div>
-                                  <div className={`text-sm flex-1 ${isActive ? "text-blue-600 font-semibold" : "text-slate-600"} ${lesson.is_completed ? "line-through text-slate-400 decoration-slate-300" : ""}`}>{lesson.title}</div>
-                              </div>
-                          );
-                      })}
+                              );
+                          })}
+                        </div>
+                      )}
                     </div>
-                  )}
-                </div>
-             ))}
+                );
+             })}
            </div>
+
+           {/* ✅ 8. ADD: Final Course Completion Button */}
+           <div className="p-6 border-t border-slate-200 bg-slate-50">
+               <button 
+                   onClick={handleClaimCertificate}
+                   disabled={!isCourseFullyComplete}
+                   className={`w-full py-3 rounded-xl font-bold flex items-center justify-center gap-2 transition-all ${isCourseFullyComplete ? "bg-[#005EB8] text-white shadow-lg shadow-blue-200 hover:scale-105 cursor-pointer" : "bg-slate-200 text-slate-400 cursor-not-allowed"}`}
+               >
+                   <Award size={20} />
+                   {isCourseFullyComplete ? "Claim Certificate" : "Complete All Modules"}
+               </button>
+           </div>
+
         </aside>
       )}
     </div>
