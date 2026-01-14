@@ -25,83 +25,82 @@ def decode_b64(text):
 
 @celery_app.task(name="worker.run_code_task", bind=True)
 def run_code_task(self, source_code, language_id, test_cases_json):
-    """
-    LeetCode-Style Batch Executor.
-    Accepts: 
-      - source_code: The user's function (e.g., def solve()...)
-      - language_id: 71 (Python), 62 (Java), etc.
-      - test_cases_json: A JSON string or list of inputs/outputs to validate against.
-    
-    Returns:
-      - A structured JSON report of which tests passed/failed.
-    """
     
     if not API_KEY:
         return {"status": "error", "output": "Server Config Error: JUDGE0_API_KEY is missing."}
 
-    # 1. GENERATE DRIVER CODE (The "Wrapper")
-    # This logic wraps the user's code to run against ALL test cases in one go.
-    # Currently implementing for PYTHON (ID 71). You can expand for others later.
-    
     final_source_code = source_code
     
     if language_id == 71: # Python
-        # We inject a script that:
-        # 1. Imports json/sys
-        # 2. Defines the user's function
-        # 3. Loops through test cases
-        # 4. Prints a JSON report at the end
-        
+        # 🔥 SMART DRIVER: Finds the user's function automatically
         driver_template = f"""
 import sys
 import json
 import time
+import inspect
 
 # --- USER CODE START ---
 {source_code}
 # --- USER CODE END ---
 
+def get_user_function():
+    # Get all functions in the global scope
+    # Filter out system imports and our own driver functions
+    all_funcs = [
+        obj for name, obj in globals().items() 
+        if inspect.isfunction(obj) 
+        and name not in ['get_user_function', 'run_tests', 'encode_b64', 'decode_b64']
+        and obj.__module__ == '__main__'
+    ]
+    
+    # Return the last defined function (most likely the user's solution)
+    if all_funcs:
+        return all_funcs[-1]
+    return None
+
 def run_tests():
     test_cases = {test_cases_json}
     results = []
     
+    # 1. FIND USER FUNCTION DYNAMICALLY
+    user_func = get_user_function()
+    
+    if not user_func:
+        print("---JSON_START---")
+        print(json.dumps({{"stats": {{"total": 0, "passed": 0, "runtime_ms": 0}}, "results": [], "error": "No function found. Please define a function."}}))
+        print("---JSON_END---")
+        return
+
     start_total = time.time()
     
     for i, case in enumerate(test_cases):
         inp = case.get("input")
         expected = case.get("output")
         
-        # Capture stdout to prevent user print() from breaking our JSON report
-        # (In a real pro environment, we'd redirect stdout, but for now we ignore it)
-        
-        start_case = time.time()
         try:
-            # ⚠️ ASSUMPTION: User must define a function named 'solution' or similar.
-            # For simplicity in this v1, we assume the user code runs procedurally 
-            # or we call a specific function if we enforce a signature.
+            # 2. CALL THE DISCOVERED FUNCTION
+            # Note: We assume single argument input for simplicity in this version.
+            # If input is meant to be multiple args (e.g. "1, 2"), parsing logic would go here.
             
-            # For this "LeetCode Lite" version, we will assume the user code
-            # defines a function named 'solve' that takes the input.
+            # Auto-convert input type if possible (naive check)
+            if isinstance(inp, str) and inp.isdigit():
+                inp = int(inp)
             
-            if 'solve' not in globals():
-                results.append({{"id": i, "status": "Error", "error": "Function 'solve' not found"}})
-                continue
-                
-            actual = solve(inp)
+            actual = user_func(inp)
             
-            # Simple equality check (can be improved for arrays/floats)
+            # Equality Check
             passed = str(actual).strip() == str(expected).strip()
             
             results.append({{
                 "id": i,
                 "status": "Passed" if passed else "Failed",
-                "input": inp,
-                "expected": expected,
-                "actual": actual
+                "input": str(inp),
+                "expected": str(expected),
+                "actual": str(actual)
             }})
             
         except Exception as e:
-            results.append({{"id": i, "status": "Runtime Error", "error": str(e)}})
+            results.append({{"id": i, "status": "Runtime Error", "error": str(e), "input": str(inp)}})
             
     end_total = time.time()
     
@@ -115,7 +114,6 @@ def run_tests():
         "results": results
     }}
     
-    # We print ONLY the JSON report to stdout so the worker can parse it
     print("---JSON_START---")
     print(json.dumps(report))
     print("---JSON_END---")
@@ -128,14 +126,14 @@ if __name__ == "__main__":
 """
         final_source_code = driver_template
 
-    # 2. SEND TO JUDGE0
+    # 2. SEND TO JUDGE0 (Same as before)
     url = f"https://{API_HOST}/submissions"
     querystring = {"base64_encoded": "true", "wait": "true"}
     
     payload = {
         "source_code": encode_b64(final_source_code),
         "language_id": language_id,
-        "stdin": "" # We baked inputs into the source code!
+        "stdin": "" 
     }
     
     headers = {
@@ -148,24 +146,20 @@ if __name__ == "__main__":
         response = requests.post(url, json=payload, headers=headers, params=querystring, timeout=10)
         data = response.json()
         
-        # 3. PARSE RESULTS
         status_id = data.get("status", {}).get("id", 0)
         
         if status_id == 3: # Accepted
             raw_output = decode_b64(data.get("stdout"))
-            
-            # Extract our JSON report
             if "---JSON_START---" in raw_output:
                 json_str = raw_output.split("---JSON_START---")[1].split("---JSON_END---")[0]
                 return {"status": "success", "data": json.loads(json_str)}
             else:
-                # Fallback if user print() messed up the output
                 return {"status": "error", "output": raw_output}
                 
         elif status_id == 6: # Compilation Error
             return {"status": "compilation_error", "output": decode_b64(data.get("compile_output"))}
             
-        else: # Runtime Error / TLE
+        else: # Runtime Error
             return {"status": "runtime_error", "output": decode_b64(data.get("stderr")) or data.get("status", {}).get("description")}
 
     except Exception as e:

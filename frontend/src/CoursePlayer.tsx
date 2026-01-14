@@ -279,34 +279,46 @@ const CodingPlayer = ({ course, token }: { course: any, token: string }) => {
     const runAndSubmit = async () => {
         setLoading(true);
         setOutput("Initializing Test Environment...");
-        setStats(null); // Reset stats
+        setStats(null);
 
         try {
             const langMap: any = { "python": 71, "java": 62, "cpp": 54, "javascript": 63 };
             const langId = langMap[course.language] || 71;
 
-            const cases = typeof selectedProblem.test_cases === 'string' 
-                ? JSON.parse(selectedProblem.test_cases) 
-                : selectedProblem.test_cases;
+            // Handle potential parsing errors safely
+            let cases = [];
+            try {
+                cases = typeof selectedProblem.test_cases === 'string' 
+                    ? JSON.parse(selectedProblem.test_cases) 
+                    : selectedProblem.test_cases;
+            } catch (e) {
+                setOutput("Error: Invalid Test Case Format in Database.");
+                setLoading(false);
+                return;
+            }
             
-            // 1. Send ONE Batch Request
             const res = await axios.post(`${API_BASE_URL}/execute`, {
                 source_code: code, 
                 language_id: langId, 
-                test_cases: cases // ✅ Sending Array
+                test_cases: cases 
             });
 
-            // 2. Poll Once
             setOutput("Running tests on server...");
             const result = await pollResult(res.data.task_id);
 
-            // 3. Process Batch Result
             if (result.status === "success" && result.data) {
                 const report = result.data;
+                
+                // Check if the driver script itself reported an error (e.g. No function found)
+                if (report.error) {
+                    setOutput(`❌ ERROR: ${report.error}`);
+                    setLoading(false);
+                    return;
+                }
+
                 const passedCount = report.stats.passed;
                 const totalCount = report.stats.total;
                 
-                // Update UI Stats
                 setStats({ 
                     runtime: `${report.stats.runtime_ms} ms`, 
                     memory: "N/A", 
@@ -317,29 +329,32 @@ const CodingPlayer = ({ course, token }: { course: any, token: string }) => {
                 if (passedCount === totalCount) {
                     setOutput("🎉 SUCCESS! All Test Cases Passed.");
                     triggerToast("Problem Solved!", "success");
-                    
-                    // Mark solved in DB
                     await axios.post(`${API_BASE_URL}/challenges/${selectedProblem.id}/solve`, {}, { headers: { Authorization: `Bearer ${token}` } });
                     
-                    // Update Local State
                     const updatedChallenges = challenges.map(c => 
                         c.id === selectedProblem.id ? { ...c, is_solved: true } : c
                     );
                     setChallenges(updatedChallenges);
 
                 } else {
-                    // Show the first failure details
+                    // Show the first failure
                     const fail = report.results.find((r: any) => r.status !== "Passed");
-                    setOutput(`❌ TEST FAILED (Case ${fail.id + 1})\n\nInput: ${fail.input}\nExpected: ${fail.expected}\nActual: ${fail.actual}`);
+                    if (fail) {
+                        if (fail.status === "Runtime Error") {
+                             setOutput(`❌ RUNTIME ERROR (Case ${fail.id + 1})\n\nInput: ${fail.input}\nError: ${fail.error}`);
+                        } else {
+                             setOutput(`❌ TEST FAILED (Case ${fail.id + 1})\n\nInput: ${fail.input}\nExpected: ${fail.expected}\nActual: ${fail.actual}`);
+                        }
+                    }
                 }
             } else {
-                // Compilation/Runtime Error
+                // Compilation Error (Syntax errors)
                 setOutput(result.output || "Execution Error");
             }
 
         } catch (err) {
             console.error(err);
-            setOutput("System Error during execution. Please check backend.");
+            setOutput("System Error during execution.");
         } finally {
             setLoading(false);
         }
