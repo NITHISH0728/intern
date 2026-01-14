@@ -844,7 +844,7 @@ const CoursePlayer = () => {
   const { courseId } = useParams();
   const navigate = useNavigate();
   const [course, setCourse] = useState<any>(null);
-  const [loading] = useState(true);
+  const [loading, setLoading] = useState(true);
   const [activeLesson, setActiveLesson] = useState<any>(null);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [expandedModules, setExpandedModules] = useState<number[]>([]);
@@ -894,16 +894,19 @@ const CoursePlayer = () => {
         const res = await axios.get(`${API_BASE_URL}/courses/${courseId}/player`, { headers: { Authorization: `Bearer ${token}` } }); 
         setCourse(res.data);
         
-        // Auto-select first lesson if none selected
         if (res.data.modules?.[0] && !activeLesson) {
             setExpandedModules([res.data.modules[0].id]); 
             if (res.data.modules[0].lessons?.length > 0) setActiveLesson(res.data.modules[0].lessons[0]);
         }
-      } catch (err) { console.error(err); }
+      } catch (err) { 
+          console.error(err); 
+      } finally {
+          // ✅ FIX 2: This turns off the loading screen
+          setLoading(false); 
+      }
     };
     fetchCourse();
-  }, [courseId, refreshTrigger]); 
-
+  }, [courseId, refreshTrigger]);
   useEffect(() => {
     if (activeLesson) {
         setIsTransitioning(true);
