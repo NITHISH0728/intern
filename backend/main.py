@@ -8,7 +8,7 @@ from pydantic import BaseModel
 import bcrypt 
 from jose import JWTError, jwt
 from datetime import datetime, timedelta
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 import models
 from database import engine, get_db # Importing the Async engine and dependency
 from fastapi.middleware.cors import CORSMiddleware
@@ -174,7 +174,9 @@ class ConfirmationRequest(BaseModel):
 class CodePayload(BaseModel):
     source_code: str
     language_id: int
-    stdin: str = ""
+    # ✅ NEW: Accepts a list of test cases (Batch Execution)
+    # Example: [{"input": "5", "output": "25"}, {"input": "10", "output": "100"}]
+    test_cases: List[Dict[str, Any]]
 
 class OTPLoginRequest(BaseModel):
     phone_number: str
@@ -1061,14 +1063,25 @@ async def verify_assignment(submission_id: int, db: AsyncSession = Depends(get_d
 
 @app.post("/api/v1/execute")
 async def execute_code(payload: CodePayload):
-    # Send to local worker
+    """
+    LeetCode-Style Batch Execution Endpoint.
+    1. Receives code + ALL test cases.
+    2. Sends them to Celery Worker (Judge0).
+    3. Returns a Task ID for polling.
+    """
+    
+    # 1. Serialize Test Cases for the Worker
+    # We use repr() to create a valid Python string representation of the list
+    # (e.g. "[{'input': '1', 'output': '1'}]") which is safe for injection.
+    test_cases_str = repr(payload.test_cases)
+
+    # 2. Send to Worker
     task = celery_app.send_task(
         "worker.run_code_task", 
-        args=[payload.source_code, payload.language_id, payload.stdin]
+        args=[payload.source_code, payload.language_id, test_cases_str]
     )
     
-    # We return the task ID so frontend can poll /api/v1/result/{task_id}
-    return {"task_id": task.id, "message": "Execution queued"}
+    return {"task_id": task.id, "message": "Batch Execution Queued"}
     
    
 

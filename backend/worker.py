@@ -2,17 +2,16 @@
 import os
 import requests
 import base64
+import json
 from celery_config import celery_app
 from dotenv import load_dotenv
 
 load_dotenv()
 
-# ✅ 1. LOAD CONFIGURATION FROM YOUR ENV
-# We use the exact names from your .env file
+# ✅ LOAD CONFIGURATION
 API_KEY = os.getenv("JUDGE0_API_KEY")
 API_HOST = os.getenv("JUDGE0_API_HOST", "judge0-ce.p.rapidapi.com")
 
-# --- Helper Functions for Base64 (Required by Judge0) ---
 def encode_b64(text):
     if not text: return ""
     return base64.b64encode(text.encode('utf-8')).decode('utf-8')
@@ -25,72 +24,149 @@ def decode_b64(text):
         return text
 
 @celery_app.task(name="worker.run_code_task", bind=True)
-def run_code_task(self, source_code, language_id, stdin):
+def run_code_task(self, source_code, language_id, test_cases_json):
     """
-    Executes code remotely using Judge0 API (via RapidAPI).
-    This keeps your server CPU load near 0% and prevents crashes.
+    LeetCode-Style Batch Executor.
+    Accepts: 
+      - source_code: The user's function (e.g., def solve()...)
+      - language_id: 71 (Python), 62 (Java), etc.
+      - test_cases_json: A JSON string or list of inputs/outputs to validate against.
+    
+    Returns:
+      - A structured JSON report of which tests passed/failed.
     """
     
-    # 1. Validation
     if not API_KEY:
         return {"status": "error", "output": "Server Config Error: JUDGE0_API_KEY is missing."}
 
-    url = f"https://{API_HOST}/submissions"
+    # 1. GENERATE DRIVER CODE (The "Wrapper")
+    # This logic wraps the user's code to run against ALL test cases in one go.
+    # Currently implementing for PYTHON (ID 71). You can expand for others later.
+    
+    final_source_code = source_code
+    
+    if language_id == 71: # Python
+        # We inject a script that:
+        # 1. Imports json/sys
+        # 2. Defines the user's function
+        # 3. Loops through test cases
+        # 4. Prints a JSON report at the end
+        
+        driver_template = f"""
+import sys
+import json
+import time
 
-    # 2. Prepare the Request
-    # We use base64_encoded=true to handle special characters safely
+# --- USER CODE START ---
+{source_code}
+# --- USER CODE END ---
+
+def run_tests():
+    test_cases = {test_cases_json}
+    results = []
+    
+    start_total = time.time()
+    
+    for i, case in enumerate(test_cases):
+        inp = case.get("input")
+        expected = case.get("output")
+        
+        # Capture stdout to prevent user print() from breaking our JSON report
+        # (In a real pro environment, we'd redirect stdout, but for now we ignore it)
+        
+        start_case = time.time()
+        try:
+            # ⚠️ ASSUMPTION: User must define a function named 'solution' or similar.
+            # For simplicity in this v1, we assume the user code runs procedurally 
+            # or we call a specific function if we enforce a signature.
+            
+            # For this "LeetCode Lite" version, we will assume the user code
+            # defines a function named 'solve' that takes the input.
+            
+            if 'solve' not in globals():
+                results.append({{"id": i, "status": "Error", "error": "Function 'solve' not found"}})
+                continue
+                
+            actual = solve(inp)
+            
+            # Simple equality check (can be improved for arrays/floats)
+            passed = str(actual).strip() == str(expected).strip()
+            
+            results.append({{
+                "id": i,
+                "status": "Passed" if passed else "Failed",
+                "input": inp,
+                "expected": expected,
+                "actual": actual
+            }})
+            
+        except Exception as e:
+            results.append({{"id": i, "status": "Runtime Error", "error": str(e)}})
+            
+    end_total = time.time()
+    
+    # FINAL REPORT
+    report = {{
+        "stats": {{
+            "total": len(test_cases),
+            "passed": len([r for r in results if r["status"] == "Passed"]),
+            "runtime_ms": round((end_total - start_total) * 1000, 2)
+        }},
+        "results": results
+    }}
+    
+    # We print ONLY the JSON report to stdout so the worker can parse it
+    print("---JSON_START---")
+    print(json.dumps(report))
+    print("---JSON_END---")
+
+if __name__ == "__main__":
+    try:
+        run_tests()
+    except Exception as e:
+        print(f"Driver Error: {{e}}")
+"""
+        final_source_code = driver_template
+
+    # 2. SEND TO JUDGE0
+    url = f"https://{API_HOST}/submissions"
     querystring = {"base64_encoded": "true", "wait": "true"}
     
     payload = {
-        "source_code": encode_b64(source_code),
+        "source_code": encode_b64(final_source_code),
         "language_id": language_id,
-        "stdin": encode_b64(stdin)
+        "stdin": "" # We baked inputs into the source code!
     }
     
     headers = {
         "content-type": "application/json",
-        "Content-Type": "application/json",
         "X-RapidAPI-Key": API_KEY,
         "X-RapidAPI-Host": API_HOST
     }
 
     try:
-        # 3. Send Code to Judge0 Cloud
         response = requests.post(url, json=payload, headers=headers, params=querystring, timeout=10)
-        
-        # 4. Handle Network/API Errors
-        if response.status_code not in [200, 201]:
-            return {"status": "error", "output": f"Judge0 API Error ({response.status_code}): {response.text}"}
-
         data = response.json()
-
-        # 5. Process the Result
-        output = ""
-        # Judge0 status IDs: 3=Accepted, 6=Compilation Error, 11=Runtime Error
+        
+        # 3. PARSE RESULTS
         status_id = data.get("status", {}).get("id", 0)
-
-        # Success (ID 3)
-        if status_id == 3:
-            output = decode_b64(data.get("stdout"))
         
-        # Compilation Error (ID 6)
-        elif status_id == 6:
-            output = "❌ Compilation Error:\n" + decode_b64(data.get("compile_output"))
-        
-        # Runtime Error or Time Limit Exceeded
-        else:
-            err = decode_b64(data.get("stderr")) or decode_b64(data.get("message"))
-            status_desc = data.get("status", {}).get("description", "Error")
-            output = f"❌ {status_desc}:\n{err}"
+        if status_id == 3: # Accepted
+            raw_output = decode_b64(data.get("stdout"))
+            
+            # Extract our JSON report
+            if "---JSON_START---" in raw_output:
+                json_str = raw_output.split("---JSON_START---")[1].split("---JSON_END---")[0]
+                return {"status": "success", "data": json.loads(json_str)}
+            else:
+                # Fallback if user print() messed up the output
+                return {"status": "error", "output": raw_output}
+                
+        elif status_id == 6: # Compilation Error
+            return {"status": "compilation_error", "output": decode_b64(data.get("compile_output"))}
+            
+        else: # Runtime Error / TLE
+            return {"status": "runtime_error", "output": decode_b64(data.get("stderr")) or data.get("status", {}).get("description")}
 
-        # 6. Return strictly structured data for Frontend
-        return {
-            "status": "success" if status_id == 3 else "completed_with_error",
-            "output": output if output else "Execution finished with no output."
-        }
-
-    except requests.exceptions.Timeout:
-        return {"status": "error", "output": "⚠️ Time Limit Exceeded: The external compiler took too long."}
-    
     except Exception as e:
-        return {"status": "error", "output": f"System Error: {str(e)}"}
+        return {"status": "system_error", "output": str(e)}

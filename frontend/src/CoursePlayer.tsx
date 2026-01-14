@@ -8,12 +8,12 @@ import API_BASE_URL from './config';
 import { 
   PlayCircle, FileText, ChevronLeft, Menu, Code, HelpCircle, 
   UploadCloud, Play, Save, Monitor, Cpu, ChevronDown, ChevronRight, CreditCard,
-  File as FileIcon, X, CheckCircle, Radio, Lock, ArrowLeft, AlertCircle,Clock, 
-  Zap
+  File as FileIcon, X, CheckCircle, Radio, Lock, ArrowLeft, AlertCircle, Clock, 
+  Zap, Check // <--- Added 'Check' icon here
 } from "lucide-react";
 
 
-// --- 🍞 SHARED TOAST COMPONENT ---
+// --- 🍞 SHARED TOAST COMPONENT (Unchanged) ---
 const ToastNotification = ({ toast, setToast }: any) => {
   if (!toast.show) return null;
   return (
@@ -39,21 +39,21 @@ const ToastNotification = ({ toast, setToast }: any) => {
   );
 };
 
-// --- 🔄 POLLING HELPER FUNCTION ---
-// --- 🔄 IMPROVED POLLING HELPER ---
+// --- 🔄 IMPROVED POLLING HELPER (UPDATED) ---
+// We changed this to handle the "Batch JSON" response structure.
 const pollResult = async (taskId: string) => {
-    const maxRetries = 20; 
+    const maxRetries = 40; // Increased timeout for batch jobs
     let attempts = 0;
 
     while (attempts < maxRetries) {
         try {
             const res = await axios.get(`${API_BASE_URL}/result/${taskId}`);
-            console.log("Polling Response:", res.data); // 👈 Debugging line
-
-            // ✅ FIX: Check for "SUCCESS" (Celery default) OR "completed"
+            
+            // Check for Celery Status
             const status = res.data.status;
+            
             if (status === "completed" || status === "SUCCESS") {
-                // If the data is nested in 'data', grab it. Otherwise use the whole response.
+                // ✅ UPDATE: Return the inner data directly if available
                 return res.data.data || res.data; 
             }
             
@@ -68,7 +68,9 @@ const pollResult = async (taskId: string) => {
     }
     return { status: "error", output: "Timeout: Server took too long to respond." };
 };
-// --- 💻 COMPONENT: PROFESSIONAL CODE ARENA ---
+
+// --- 💻 COMPONENT: CODE COMPILER (For Standard Lessons) ---
+// Updated to send 'test_cases' array instead of 'stdin'
 const CodeCompiler = ({ lesson }: { lesson: any }) => {
   const [toast, setToast] = useState({ show: false, message: "", type: "success" });
   const triggerToast = (message: string, type: "success" | "error" = "success") => {
@@ -93,7 +95,7 @@ const CodeCompiler = ({ lesson }: { lesson: any }) => {
       title: "No Problem Configured", description: "Please ask the instructor to update this test.", testCases: [] 
   };
 
-  const [code, setCode] = useState("# Write your solution here...\nprint('Hello iQmath')");
+  const [code, setCode] = useState("# Write your solution here...\n\ndef solve(x):\n    return x\n");
   const [output, setOutput] = useState("Ready to execute...");
   const [loading, setLoading] = useState(false);
   const [language, setLanguage] = useState(71); 
@@ -107,25 +109,40 @@ const CodeCompiler = ({ lesson }: { lesson: any }) => {
 
   const runCode = async () => {
     setLoading(true);
-    setOutput("Compiling & Executing (Queued)...");
+    setOutput("Compiling & Executing (Batch Mode)...");
     try {
-        // 1. Submit Job
+        // 1. Prepare Test Cases
+        const testCasesPayload = activeProblem.testCases || [];
+
+        // 2. Submit Batch Job (Updated Payload)
         const res = await axios.post(`${API_BASE_URL}/execute`, {
-    source_code: code,
-    language_id: language, 
-    stdin: activeProblem.testCases?.[0]?.input || "" 
-});
+            source_code: code,
+            language_id: language, 
+            test_cases: testCasesPayload // ✅ Sending Array
+        });
 
         const taskId = res.data.task_id;
-        setOutput("Processing in Background...");
+        
+        // 3. Poll Result
+        const result = await pollResult(taskId);
 
-       // 2. Poll for Result
-      const result = await pollResult(taskId);
-
-      // 3. Display Output
-      // Since we fixed pollResult, 'result' is now the full object { status: "...", output: "..." }
-      // We just display whatever is in 'output', whether it is success or error text.
-      setOutput(result.output || "Execution finished with no output.");
+        // 4. Format Output based on JSON response
+        if (result.status === "success" && result.data) {
+            const report = result.data;
+            let display = `✨ Execution Complete!\n`;
+            display += `Runtime: ${report.stats.runtime_ms}ms | Passed: ${report.stats.passed}/${report.stats.total}\n\n`;
+            
+            report.results.forEach((r: any) => {
+                display += `${r.status === "Passed" ? "✅" : "❌"} Test Case ${r.id + 1}: ${r.status}\n`;
+                if (r.status !== "Passed") {
+                    display += `   Input: ${r.input}\n   Expected: ${r.expected}\n   Actual: ${r.actual}\n\n`;
+                }
+            });
+            setOutput(display);
+        } else {
+            // Fallback for compilation errors
+            setOutput(result.output || "Execution failed.");
+        }
 
     } catch (err) {
         console.error(err);
@@ -134,6 +151,7 @@ const CodeCompiler = ({ lesson }: { lesson: any }) => {
         setLoading(false);
     }
   };
+
   const saveProgress = () => {
       triggerToast("Code Saved Successfully!", "success");
   };
@@ -211,19 +229,19 @@ const CodeCompiler = ({ lesson }: { lesson: any }) => {
   );
 };
 
-
-
-// --- 🆕 COMPONENT: CODING COURSE PLAYER ---
+// --- 🆕 COMPONENT: CODING COURSE PLAYER (The LeetCode One) ---
 const CodingPlayer = ({ course, token }: { course: any, token: string }) => {
     const { courseId } = useParams();
     const navigate = useNavigate();
     const [challenges, setChallenges] = useState<any[]>([]);
     const [activeTab, setActiveTab] = useState("Easy");
     const [selectedProblem, setSelectedProblem] = useState<any>(null);
-    const [code, setCode] = useState("");
+    const [code, setCode] = useState("# Implement function 'solve(input)'\n\ndef solve(x):\n    return x\n");
     const [output, setOutput] = useState("Ready to execute...");
     const [loading, setLoading] = useState(false);
-    const [, setVerdict] = useState<string | null>(null);
+    
+    // ✅ NEW: Stats state for displaying Pass/Fail/Runtime
+    const [stats, setStats] = useState<{runtime: string, memory: string, passed: number, total: number} | null>(null);
 
     const [toast, setToast] = useState({ show: false, message: "", type: "success" });
     const triggerToast = (message: string, type: "success" | "error" = "success") => {
@@ -257,10 +275,11 @@ const CodingPlayer = ({ course, token }: { course: any, token: string }) => {
         return true;
     };
 
+    // ✅ UPDATED: Batch Execution Logic (No loops)
     const runAndSubmit = async () => {
         setLoading(true);
         setOutput("Initializing Test Environment...");
-        setVerdict(null);
+        setStats(null); // Reset stats
 
         try {
             const langMap: any = { "python": 71, "java": 62, "cpp": 54, "javascript": 63 };
@@ -269,43 +288,55 @@ const CodingPlayer = ({ course, token }: { course: any, token: string }) => {
             const cases = typeof selectedProblem.test_cases === 'string' 
                 ? JSON.parse(selectedProblem.test_cases) 
                 : selectedProblem.test_cases;
+            
+            // 1. Send ONE Batch Request
+            const res = await axios.post(`${API_BASE_URL}/execute`, {
+                source_code: code, 
+                language_id: langId, 
+                test_cases: cases // ✅ Sending Array
+            });
+
+            // 2. Poll Once
+            setOutput("Running tests on server...");
+            const result = await pollResult(res.data.task_id);
+
+            // 3. Process Batch Result
+            if (result.status === "success" && result.data) {
+                const report = result.data;
+                const passedCount = report.stats.passed;
+                const totalCount = report.stats.total;
                 
-            let allPassed = true;
-            let currentOutput = "";
+                // Update UI Stats
+                setStats({ 
+                    runtime: `${report.stats.runtime_ms} ms`, 
+                    memory: "N/A", 
+                    passed: passedCount,
+                    total: totalCount
+                });
 
-            for (let i = 0; i < cases.length; i++) {
-                const tc = cases[i];
-                
-                // 1. Submit Job
-                setOutput(`Running Test Case ${i + 1}/${cases.length}...`);
-                const res = await axios.post(`${API_BASE_URL}/execute`, {
-    source_code: code, language_id: langId, stdin: tc.input
-});
+                if (passedCount === totalCount) {
+                    setOutput("🎉 SUCCESS! All Test Cases Passed.");
+                    triggerToast("Problem Solved!", "success");
+                    
+                    // Mark solved in DB
+                    await axios.post(`${API_BASE_URL}/challenges/${selectedProblem.id}/solve`, {}, { headers: { Authorization: `Bearer ${token}` } });
+                    
+                    // Update Local State
+                    const updatedChallenges = challenges.map(c => 
+                        c.id === selectedProblem.id ? { ...c, is_solved: true } : c
+                    );
+                    setChallenges(updatedChallenges);
 
-                // 2. Poll for Result
-                const result = await pollResult(res.data.task_id);
-                const actualOutput = result.output ? result.output.trim() : "";
-                const expectedOutput = tc.output.trim();
-
-                // Validation Logic
-                if (actualOutput !== expectedOutput) {
-                    allPassed = false;
-                    currentOutput = `❌ TEST CASE ${i + 1} FAILED\n\n➤ Input:\n${tc.input}\n\n➤ Expected Output:\n${tc.output}\n\n➤ Your Output:\n${actualOutput}`;
-                    break;
+                } else {
+                    // Show the first failure details
+                    const fail = report.results.find((r: any) => r.status !== "Passed");
+                    setOutput(`❌ TEST FAILED (Case ${fail.id + 1})\n\nInput: ${fail.input}\nExpected: ${fail.expected}\nActual: ${fail.actual}`);
                 }
+            } else {
+                // Compilation/Runtime Error
+                setOutput(result.output || "Execution Error");
             }
 
-            if (allPassed) {
-                currentOutput = "🎉 SUCCESS! All Test Cases Passed.\n\nYour solution has been verified and saved.";
-                await axios.post(`${API_BASE_URL}/challenges/${selectedProblem.id}/solve`, {}, { headers: { Authorization: `Bearer ${token}` } });
-                const updatedChallenges = challenges.map(c => 
-                    c.id === selectedProblem.id ? { ...c, is_solved: true } : c
-                );
-                setChallenges(updatedChallenges);
-                setVerdict("Solved");
-            }
-
-            setOutput(currentOutput);
         } catch (err) {
             console.error(err);
             setOutput("System Error during execution. Please check backend.");
@@ -340,6 +371,20 @@ const CodingPlayer = ({ course, token }: { course: any, token: string }) => {
                             {selectedProblem.description}
                         </div>
 
+                        {/* ✅ NEW: Stats Box when result comes back */}
+                        {stats && (
+                            <div className={`p-4 rounded-xl mb-6 border ${stats.passed === stats.total ? "bg-green-50 border-green-200 text-green-800" : "bg-red-50 border-red-200 text-red-800"}`}>
+                                <h3 className="font-bold text-lg mb-2 flex items-center gap-2">
+                                    {stats.passed === stats.total ? <Check size={20} /> : <AlertCircle size={20} />}
+                                    {stats.passed === stats.total ? "Accepted" : "Wrong Answer"}
+                                </h3>
+                                <div className="flex gap-4 text-sm font-mono">
+                                    <span>Passed: {stats.passed}/{stats.total}</span>
+                                    <span>Runtime: {stats.runtime}</span>
+                                </div>
+                            </div>
+                        )}
+
                         <h3 className="text-xs font-extrabold text-slate-900 uppercase tracking-widest mb-4">TEST CASES</h3>
                         <div className="space-y-4">
                             {(typeof selectedProblem.test_cases === 'string' ? JSON.parse(selectedProblem.test_cases) : selectedProblem.test_cases).map((tc: any, i: number) => {
@@ -358,10 +403,6 @@ const CodingPlayer = ({ course, token }: { course: any, token: string }) => {
                                 );
                             })}
                         </div>
-                     </div>
-                     <div className="p-4 border-t border-slate-100 flex gap-3">
-                        <button onClick={() => setSelectedProblem(null)} className="flex-1 py-3 rounded-xl border border-slate-200 font-bold text-slate-500 hover:bg-slate-50">Previous</button>
-                        <button className="flex-1 py-3 rounded-xl bg-slate-800 text-white font-bold hover:bg-slate-900">Next Problem</button>
                      </div>
                  </div>
 
@@ -391,18 +432,16 @@ const CodingPlayer = ({ course, token }: { course: any, token: string }) => {
                             <span className="text-slate-400 text-xs font-bold uppercase tracking-wider flex items-center gap-2"><Monitor size={14}/> Terminal Output</span>
                          </div>
                          <div className="flex-1 p-5 font-mono text-sm text-[#4ade80] overflow-auto whitespace-pre-wrap leading-relaxed">
-                             {output}
+                            {output}
                          </div>
-                     </div>
-
-                     {/* ACTION BUTTONS */}
-                     <div className="flex justify-end gap-4 bg-white p-4 rounded-2xl shadow-sm border border-slate-200">
-                         <button onClick={() => triggerToast("Progress Saved!", "success")} className="px-6 py-3 rounded-xl border border-slate-200 font-bold text-slate-600 hover:bg-slate-50 flex items-center gap-2">
-                             <Save size={18} /> Save
-                         </button>
-                         <button onClick={runAndSubmit} disabled={loading} className="px-8 py-3 rounded-xl bg-[#005EB8] hover:bg-[#004a94] text-white font-bold shadow-lg shadow-blue-200 flex items-center gap-2 disabled:opacity-70 transition-all">
-                             {loading ? <Cpu size={18} className="animate-spin"/> : <Play size={18} />} {loading ? "Running Code..." : "Run Code"}
-                         </button>
+                         <div className="p-4 bg-slate-800 flex justify-end gap-4">
+                             <button onClick={() => triggerToast("Progress Saved!", "success")} className="px-6 py-3 rounded-xl border border-slate-600 font-bold text-slate-300 hover:bg-slate-700 flex items-center gap-2 transition-all">
+                                 <Save size={18} /> Save
+                             </button>
+                             <button onClick={runAndSubmit} disabled={loading} className="px-8 py-3 rounded-xl bg-[#005EB8] hover:bg-[#004a94] text-white font-bold shadow-lg shadow-blue-200 flex items-center gap-2 disabled:opacity-70 transition-all">
+                                 {loading ? <Cpu size={18} className="animate-spin"/> : <Play size={18} />} {loading ? "Running Code..." : "Run Code"}
+                             </button>
+                         </div>
                      </div>
                  </div>
             </div>
@@ -750,14 +789,14 @@ const LiveTestProctor = ({ lesson }: { lesson: any }) => {
         return (
             <div className="fixed inset-0 z-[9999] w-screen h-screen bg-black flex flex-col">
                 {!isFullscreen && (
-                     <div className="absolute inset-0 z-[10000] bg-black/95 flex flex-col items-center justify-center text-white p-10 text-center">
+                      <div className="absolute inset-0 z-[10000] bg-black/95 flex flex-col items-center justify-center text-white p-10 text-center">
                         <AlertCircle size={64} className="text-red-500 mb-4 animate-bounce" />
                         <h2 className="text-3xl font-bold text-red-400 mb-2">RETURN TO FULLSCREEN</h2>
                         <div className="mt-6 font-mono font-bold text-2xl text-white bg-red-600 px-6 py-2 rounded">
                              Attempts Remaining: {Math.max(0, 2 - violationCount)}
                         </div>
                         <button onClick={enterFullScreenAndStart} className="mt-8 bg-white text-black px-8 py-3 rounded-lg font-bold">RETURN</button>
-                     </div>
+                      </div>
                 )}
 
                 <div className="h-14 bg-slate-900 border-b border-slate-700 flex justify-between items-center px-6 text-white select-none">
@@ -766,7 +805,6 @@ const LiveTestProctor = ({ lesson }: { lesson: any }) => {
                         <div className="flex items-center gap-2 text-red-400 font-mono text-xs font-bold animate-pulse border border-red-900 bg-red-900/20 px-2 py-1 rounded"><Radio size={12} /> REC</div>
                     </div>
                     <div className="flex items-center gap-6">
-                        {/* ✅ FIX: Display Max 2 Limit */}
                         <div className={`flex items-center gap-2 text-sm font-bold px-3 py-1 rounded ${violationCount > 0 ? 'bg-red-900/50 text-red-200' : 'bg-green-900/30 text-green-400'}`}>
                             <AlertCircle size={16} /> 
                             Warnings: {violationCount} / 2
