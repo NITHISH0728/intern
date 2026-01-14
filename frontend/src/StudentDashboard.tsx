@@ -79,7 +79,7 @@ const CourseCard = ({ course, type, navigate, handleFreeEnroll, openEnrollModal 
     );
 };
 
-
+// --- 🔄 POLL RESULT HELPER (Added Globally) ---
 const pollResult = async (taskId: string) => {
     const maxRetries = 40; 
     let attempts = 0;
@@ -90,10 +90,8 @@ const pollResult = async (taskId: string) => {
             const status = res.data.status;
             
             if (status === "completed" || status === "SUCCESS") {
-                // Return the data directly
                 return res.data.data || res.data; 
             }
-            
             if (status === "failed" || status === "FAILURE") {
                 return { status: "error", output: res.data.error || "Execution failed" };
             }
@@ -341,8 +339,6 @@ const StudentDashboard = () => {
       triggerToast("✅ Code Saved!", "success"); 
   };
 
-  // EXECUTION LOGIC
-  // ✅ UPDATED EXECUTION LOGIC (Batch Mode)
   // ✅ UPDATED EXECUTION LOGIC (Batch Mode)
   const handleRun = async () => { 
       setExecutionStatus("running"); 
@@ -374,7 +370,6 @@ const StudentDashboard = () => {
           const taskId = res.data.task_id;
           
           // 3. Poll for Result
-          // We use a simple loop here instead of setInterval to avoid overlapping calls
           const result = await pollResult(taskId);
 
           // 4. Process Batch Result
