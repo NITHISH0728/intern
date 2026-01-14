@@ -79,6 +79,33 @@ const CourseCard = ({ course, type, navigate, handleFreeEnroll, openEnrollModal 
     );
 };
 
+
+const pollResult = async (taskId: string) => {
+    const maxRetries = 40; 
+    let attempts = 0;
+
+    while (attempts < maxRetries) {
+        try {
+            const res = await axios.get(`${API_BASE_URL}/result/${taskId}`);
+            const status = res.data.status;
+            
+            if (status === "completed" || status === "SUCCESS") {
+                // Return the data directly
+                return res.data.data || res.data; 
+            }
+            
+            if (status === "failed" || status === "FAILURE") {
+                return { status: "error", output: res.data.error || "Execution failed" };
+            }
+        } catch (e) {
+            console.error("Polling error", e);
+        }
+        attempts++;
+        await new Promise(resolve => setTimeout(resolve, 1000)); 
+    }
+    return { status: "error", output: "Timeout: Server took too long to respond." };
+};
+
 // --- 🔵 MAIN COMPONENT ---
 
 const StudentDashboard = () => {
@@ -316,13 +343,14 @@ const StudentDashboard = () => {
 
   // EXECUTION LOGIC
   // ✅ UPDATED EXECUTION LOGIC (Batch Mode)
+  // ✅ UPDATED EXECUTION LOGIC (Batch Mode)
   const handleRun = async () => { 
       setExecutionStatus("running"); 
       setConsoleOutput("🚀 Compiling & Running Test Cases..."); 
       
       const currentProb = activeTest?.problems[currentProblemIndex]; 
       
-      // Parse Test Cases
+      // 1. Safe Parsing of Test Cases
       let testCases = [];
       try {
           testCases = currentProb ? JSON.parse(currentProb.test_cases) : [];
@@ -333,7 +361,7 @@ const StudentDashboard = () => {
       }
 
       try { 
-          // 1. Send Batch Request
+          // 2. Send ONE Batch Request
           const res = await axios.post(`${API_BASE_URL}/execute`, 
             { 
                 source_code: userCode, 
@@ -345,59 +373,42 @@ const StudentDashboard = () => {
 
           const taskId = res.data.task_id;
           
-          // 2. Poll for Result
-          const intervalId = setInterval(async () => {
-              try {
-                  const statusRes = await axios.get(`${API_BASE_URL}/result/${taskId}`);
-                  
-                  if (statusRes.data.status === "completed" || statusRes.data.status === "SUCCESS") {
-                      clearInterval(intervalId);
-                      
-                      // 3. Parse JSON Report
-                      const resultData = statusRes.data.data || statusRes.data;
-                      
-                      if (resultData.status === "success" || resultData.stats) {
-                           // Execution Successful (Logic ran)
-                           const report = resultData;
-                           const passedCount = report.stats.passed;
-                           const totalCount = report.stats.total;
-                           
-                           if (passedCount === totalCount) {
-                               setExecutionStatus("success");
-                               setConsoleOutput(`🎉 SUCCESS! All Test Cases Passed.\n\nRuntime: ${report.stats.runtime_ms}ms`);
-                           } else {
-                               setExecutionStatus("error");
-                               // Find first failure
-                               const fail = report.results.find((r: any) => r.status !== "Passed");
-                               if (fail) {
-                                   if (fail.status === "Runtime Error") {
-                                       setConsoleOutput(`❌ RUNTIME ERROR (Case ${fail.id + 1})\n\nInput: ${fail.input}\nError: ${fail.error}`);
-                                   } else {
-                                       setConsoleOutput(`❌ TEST FAILED (Case ${fail.id + 1})\n\nInput:    ${fail.input}\nExpected: ${fail.expected}\nActual:   ${fail.actual}`);
-                                   }
-                               }
-                           }
-                      } else {
-                           // Compilation/System Error
-                           setExecutionStatus("error");
-                           setConsoleOutput(resultData.output || "Execution Error");
-                      }
+          // 3. Poll for Result
+          // We use a simple loop here instead of setInterval to avoid overlapping calls
+          const result = await pollResult(taskId);
 
-                  } else if (statusRes.data.status === "failed") {
-                      clearInterval(intervalId);
-                      setExecutionStatus("error");
-                      setConsoleOutput("❌ System Error during execution.");
-                  }
-              } catch (err) { 
-                  clearInterval(intervalId); 
-                  setExecutionStatus("error"); 
-              }
-          }, 1000);
+          // 4. Process Batch Result
+          if (result.status === "success" && result.data) {
+               const report = result.data;
+               const passedCount = report.stats.passed;
+               const totalCount = report.stats.total;
+               
+               if (passedCount === totalCount) {
+                   setExecutionStatus("success");
+                   setConsoleOutput(`🎉 SUCCESS! All Test Cases Passed.\n\nRuntime: ${report.stats.runtime_ms}ms`);
+               } else {
+                   setExecutionStatus("error");
+                   // Find first failure
+                   const fail = report.results.find((r: any) => r.status !== "Passed");
+                   
+                   // Handle Runtime Errors gracefully
+                   if (fail.status === "Runtime Error" || !fail.input) {
+                        setConsoleOutput(`❌ RUNTIME ERROR (Case ${fail.id + 1})\n\n${fail.error || "Unknown Error"}`);
+                   } else {
+                        setConsoleOutput(`❌ TEST FAILED (Case ${fail.id + 1})\n\nInput:    ${fail.input}\nExpected: ${fail.expected}\nActual:   ${fail.actual}`);
+                   }
+               }
+          } else {
+               // Compilation/System Error
+               setExecutionStatus("error");
+               setConsoleOutput(result.output || "Execution Error");
+          }
+
       } catch (err: any) { 
           setExecutionStatus("error"); 
-          setConsoleOutput("❌ Failed to queue job."); 
+          setConsoleOutput("❌ Failed to queue job. Check network connection."); 
       } 
-  }; 
+  };
 
 
   const switchQuestion = (index: number) => { 

@@ -41,19 +41,18 @@ const ToastNotification = ({ toast, setToast }: any) => {
 
 // --- 🔄 IMPROVED POLLING HELPER (UPDATED) ---
 // We changed this to handle the "Batch JSON" response structure.
+// --- 🔄 UPDATED POLLING HELPER ---
 const pollResult = async (taskId: string) => {
-    const maxRetries = 40; // Increased timeout for batch jobs
+    const maxRetries = 40; 
     let attempts = 0;
 
     while (attempts < maxRetries) {
         try {
             const res = await axios.get(`${API_BASE_URL}/result/${taskId}`);
-            
-            // Check for Celery Status
             const status = res.data.status;
             
             if (status === "completed" || status === "SUCCESS") {
-                // ✅ UPDATE: Return the inner data directly if available
+                // Return the data directly
                 return res.data.data || res.data; 
             }
             
