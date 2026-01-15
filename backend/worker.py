@@ -92,7 +92,8 @@ def get_user_function():
     return None
 
 def run_tests():
-    test_cases = {json.dumps(test_cases)}
+    # We use explicit repr() or just the variable to ensure Python boolean syntax (True/False)
+    test_cases = {test_cases} 
     results = []
     
     user_func = get_user_function()
