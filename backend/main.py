@@ -1128,27 +1128,16 @@ async def verify_assignment(submission_id: int, db: AsyncSession = Depends(get_d
 
 @app.post("/api/v1/execute")
 async def execute_code(payload: CodePayload):
-    """
-    LeetCode-Style Batch Execution Endpoint.
-    1. Receives code + ALL test cases.
-    2. Sends them to Celery Worker (Judge0).
-    3. Returns a Task ID for polling.
-    """
     
-    # 1. Serialize Test Cases for the Worker
-    # We use repr() to create a valid Python string representation of the list
-    # (e.g. "[{'input': '1', 'output': '1'}]") which is safe for injection.
-    test_cases_str = repr(payload.test_cases)
+    # ✅ FIX: Use json.dumps() to ensure double quotes (Valid JSON)
+    test_cases_str = json.dumps(payload.test_cases)
 
-    # 2. Send to Worker
     task = celery_app.send_task(
         "worker.run_code_task", 
         args=[payload.source_code, payload.language_id, test_cases_str]
     )
     
     return {"task_id": task.id, "message": "Batch Execution Queued"}
-
-
 # --- ✅ COMPLETION LOGIC ENDPOINTS ---
 
 # 1. Toggle Item Completion (The Green Tick)
