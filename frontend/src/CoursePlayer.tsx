@@ -1077,7 +1077,21 @@ const CoursePlayer = () => {
     );
 
     let contentBody = null;
-    if (activeLesson.type === "note") contentBody = <iframe src={getEmbedUrl(activeLesson.url)} width="100%" height="100%" className="bg-white border-0" allow="autoplay" />;
+   if (activeLesson.type === "note") {
+        contentBody = (
+            <div className="w-full h-full relative">
+                <iframe 
+                    src={getEmbedUrl(activeLesson.url)} 
+                    width="100%" 
+                    height="100%" 
+                    className="bg-white border-0" 
+                    allow="autoplay" 
+                />
+                {/* 🛡️ SECURITY OVERLAY: Hides the Google Drive 'Pop-out' button */}
+                <div style={{ position: "absolute", top: 0, right: 0, width: "65px", height: "60px", background: "#202124", zIndex: 50 }}></div>
+            </div>
+        );
+    }
     else if (activeLesson.type === "quiz") contentBody = ( <div className="w-full h-full bg-slate-50 flex flex-col items-center justify-center p-4"><iframe src={getEmbedUrl(activeLesson.url)} width="100%" height="100%" frameBorder="0" className="rounded-xl shadow-sm border border-slate-200 bg-white max-w-4xl" allowFullScreen sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-top-navigation">Loading...</iframe></div> );
     else if (activeLesson.type === "video" || activeLesson.type === "live_class") contentBody = <DelayedVideoPlayer key={activeLesson.id} lesson={activeLesson} plyrOptions={plyrOptions} />;
     else if (activeLesson.type === "live_test") contentBody = <LiveTestProctor lesson={activeLesson} />;
