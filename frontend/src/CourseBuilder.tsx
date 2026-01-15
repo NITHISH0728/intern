@@ -5,7 +5,7 @@ import API_BASE_URL from './config';
 import { 
   Plus, ArrowLeft, Video, HelpCircle, Zap, FileText, 
   Edit3, Layout, X, Link, Clock, Radio, 
-  AlertCircle, Trash2, CheckCircle, Code
+  AlertCircle, Trash2, CheckCircle, Code,Edit
 } from "lucide-react";
 
 interface Module {
@@ -55,6 +55,44 @@ const CourseBuilder = () => {
   const [activeProblemIndex, setActiveProblemIndex] = useState(0);
 
   const [toast, setToast] = useState({ show: false, message: "", type: "success" });
+  
+  const [isEditingCourse, setIsEditingCourse] = useState(false);
+  const [editCourseForm, setEditCourseForm] = useState({
+      title: "", description: "", price: 0, image_url: "", language: ""
+  });
+
+  // Open the modal and fill it with existing data
+  const handleEditCourseClick = () => {
+      if (!courseDetails) return;
+      setEditCourseForm({
+          title: courseDetails.title || "",
+          description: courseDetails.description || "",
+          price: courseDetails.price || 0,
+          image_url: courseDetails.image_url || "",
+          language: courseDetails.language || ""
+      });
+      setIsEditingCourse(true);
+  };
+
+  // Save changes to backend
+  const handleSaveCourseDetails = async () => {
+      try {
+          const token = localStorage.getItem("token");
+          // Re-using the endpoint we created in the previous step
+          await axios.patch(`${API_BASE_URL}/courses/${courseId}/details`, editCourseForm, {
+              headers: { Authorization: `Bearer ${token}` }
+          });
+          
+          // Update local state immediately so the UI reflects changes
+          setCourseDetails({ ...courseDetails, ...editCourseForm });
+          
+          triggerToast("Course details updated!", "success");
+          setIsEditingCourse(false);
+      } catch (err) {
+          console.error(err);
+          triggerToast("Failed to update course details.", "error");
+      }
+  };
 
   const brand = { 
     blue: "#005EB8", green: "#87C232", bg: "#E2E8F0", 
@@ -382,10 +420,22 @@ const CourseBuilder = () => {
       <header style={{ display: "flex", justifyContent: "space-between", alignItems: "center", background: brand.cardBg, padding: "16px 40px", borderBottom: `1px solid ${brand.border}`, zIndex: 50 }}>
         <div style={{ display: "flex", alignItems: "center", gap: "20px" }}>
           <button onClick={() => navigate("/dashboard/courses")} style={{ background: "#E2E8F0", border: "none", padding: "10px", borderRadius: "50%", cursor: "pointer" }}><ArrowLeft size={20} color={brand.textMain} /></button>
-          <div>
-            <h2 style={{ fontSize: "20px", fontWeight: "800", color: brand.textMain, margin: 0 }}>Course Curriculum Builder</h2>
+          
+          {/* ✅ UPDATED: Dynamic Title & Edit Button */}
+          <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+            <h2 style={{ fontSize: "20px", fontWeight: "800", color: brand.textMain, margin: 0 }}>
+                {courseDetails?.title || "Course Builder"}
+            </h2>
+            <button 
+                onClick={handleEditCourseClick}
+                style={{ background: "none", border: "none", cursor: "pointer", padding: "5px", display: "flex", alignItems: "center" }}
+                title="Edit Course Details"
+            >
+                <Edit size={18} color={brand.textLight} style={{ transition: "color 0.2s" }} />
+            </button>
           </div>
         </div>
+
         <div style={{ display: "flex", gap: "12px" }}>
             <button onClick={() => navigate(`/dashboard/course/${courseId}/preview`)} style={{ padding: "10px 20px", background: "white", color: "#005EB8", border: "1px solid #005EB8", borderRadius: "8px", fontWeight: "600", cursor: "pointer" }}>Preview & Manage</button>
             <button onClick={handlePublish} disabled={isPublishing} style={{ padding: "12px 32px", borderRadius: "10px", border: "none", background: brand.green, color: "white", fontWeight: "800", cursor: "pointer" }}>{isPublishing ? "Publishing..." : "Publish Course"}</button>
@@ -566,6 +616,84 @@ const CourseBuilder = () => {
             )}
             <button onClick={saveContentItem} style={saveButton}>Save {activeModal === "Code Test" ? "Test" : activeModal === "Heading" ? "Section Heading" : "Learning Item"}</button>
           </div>
+        </div>
+      )}
+      {/* ✅ NEW: EDIT COURSE DETAILS MODAL */}
+      {isEditingCourse && (
+        <div style={modalOverlay}>
+            <div style={modalContent}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px", paddingBottom: "15px", borderBottom: `1px solid ${brand.border}` }}>
+                    <h3 style={{ fontSize: "20px", fontWeight: "800", margin: 0, display: "flex", alignItems: "center", gap: "10px" }}>
+                        <Edit size={20} color={brand.blue} /> Edit Course Details
+                    </h3>
+                    <X onClick={() => setIsEditingCourse(false)} style={{ cursor: "pointer", color: brand.textLight }} />
+                </div>
+
+                <div style={{ display: "flex", flexDirection: "column", gap: "20px", maxHeight: "60vh", overflowY: "auto", paddingRight: "5px" }}>
+                    {/* Title */}
+                    <div>
+                        <label style={labelStyle}>Course Title</label>
+                        <input 
+                            value={editCourseForm.title} 
+                            onChange={(e) => setEditCourseForm({...editCourseForm, title: e.target.value})} 
+                            style={inputStyle} 
+                        />
+                    </div>
+
+                    {/* Description */}
+                    <div>
+                        <label style={labelStyle}>Description</label>
+                        <textarea 
+                            rows={3}
+                            value={editCourseForm.description} 
+                            onChange={(e) => setEditCourseForm({...editCourseForm, description: e.target.value})} 
+                            style={{...inputStyle, resize: "vertical"}} 
+                        />
+                    </div>
+
+                    <div style={{ display: "flex", gap: "20px" }}>
+                        {/* Price */}
+                        <div style={{ flex: 1 }}>
+                            <label style={labelStyle}>Price (INR)</label>
+                            <input 
+                                type="number"
+                                value={editCourseForm.price} 
+                                onChange={(e) => setEditCourseForm({...editCourseForm, price: parseInt(e.target.value)})} 
+                                style={inputStyle} 
+                            />
+                        </div>
+                        {/* Language */}
+                        <div style={{ flex: 1 }}>
+                            <label style={labelStyle}>Language</label>
+                            <select 
+                                value={editCourseForm.language} 
+                                onChange={(e) => setEditCourseForm({...editCourseForm, language: e.target.value})} 
+                                style={inputStyle}
+                            >
+                                <option value="python">Python</option>
+                                <option value="java">Java</option>
+                                <option value="cpp">C++</option>
+                                <option value="javascript">JavaScript</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    {/* Thumbnail */}
+                    <div>
+                        <label style={labelStyle}>Thumbnail URL</label>
+                        <div style={{ position: "relative" }}>
+                            <Link size={18} style={{ position: "absolute", left: "14px", top: "14px", color: brand.textLight }} />
+                            <input 
+                                value={editCourseForm.image_url} 
+                                onChange={(e) => setEditCourseForm({...editCourseForm, image_url: e.target.value})} 
+                                style={{ ...inputStyle, paddingLeft: "45px" }} 
+                            />
+                        </div>
+                    </div>
+                </div>
+
+                <button onClick={handleSaveCourseDetails} style={saveButton}>Save Changes</button>
+            </div>
         </div>
       )}
       {toast.show && (<div style={{ position: "fixed", top: "20px", right: "20px", zIndex: 9999, background: "white", padding: "16px 24px", borderRadius: "12px", boxShadow: "0 10px 30px -5px rgba(0,0,0,0.15)", borderLeft: `6px solid ${toast.type === "success" ? brand.green : "#ef4444"}`, display: "flex", alignItems: "center", gap: "12px", animation: "slideIn 0.3s ease-out" }}>{toast.type === "success" ? <CheckCircle size={24} color={brand.green} /> : <AlertCircle size={24} color="#ef4444" />}<div><h4 style={{ margin: "0 0 4px 0", fontSize: "14px", fontWeight: "700", color: brand.textMain }}>{toast.type === "success" ? "Success" : "Error"}</h4><p style={{ margin: 0, fontSize: "13px", color: brand.textLight }}>{toast.message}</p></div><button onClick={() => setToast({ ...toast, show: false })} style={{ background: "none", border: "none", cursor: "pointer", marginLeft: "10px" }}><X size={16} color="#94a3b8" /></button><style>{`@keyframes slideIn { from { opacity: 0; transform: translateX(20px); } to { opacity: 1; transform: translateX(0); } }`}</style></div>)}
