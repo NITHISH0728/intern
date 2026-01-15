@@ -9,7 +9,7 @@ import {
   PlayCircle, FileText, ChevronLeft, Menu, Code, HelpCircle, 
   UploadCloud, Play, Save, Monitor, Cpu, ChevronDown, ChevronRight, CreditCard,
   File as FileIcon, X, CheckCircle, Radio, Lock, ArrowLeft, AlertCircle, Clock, 
-  Zap, Check, CheckSquare, Square, CheckCheck, Award // <--- Added 'Check' icon here
+  Zap, Check, CheckSquare, Square, CheckCheck, Award, Edit // <--- Added 'Check' icon here
 } from "lucide-react";
 
 
@@ -854,6 +854,45 @@ const CoursePlayer = () => {
   
   // ✅ 1. ADD: State to trigger re-renders when items are marked complete
   const [refreshTrigger, setRefreshTrigger] = useState(0);
+  
+  const [isEditing, setIsEditing] = useState(false);
+  const [editForm, setEditForm] = useState({
+      title: "",
+      description: "",
+      price: 0,
+      image_url: "",
+      language: ""
+  });
+
+  // ✅ NEW: Open Edit Modal and populate data
+  const handleEditClick = () => {
+      if (!course) return;
+      setEditForm({
+          title: course.title || "",
+          description: course.description || "",
+          price: course.price || 0,
+          image_url: course.image_url || "",
+          language: course.language || ""
+      });
+      setIsEditing(true);
+  };
+
+  // ✅ NEW: Save Changes to Backend
+  const handleSaveChanges = async () => {
+      try {
+          const token = localStorage.getItem("token");
+          await axios.patch(`${API_BASE_URL}/courses/${courseId}/details`, editForm, {
+              headers: { Authorization: `Bearer ${token}` }
+          });
+          
+          triggerToast("Course Updated Successfully!", "success");
+          setIsEditing(false);
+          setRefreshTrigger(prev => prev + 1); // Refresh UI to show new title/etc
+      } catch (err) {
+          console.error(err);
+          triggerToast("Failed to update course.", "error");
+      }
+  };
 
   const [toast, setToast] = useState({ show: false, message: "", type: "success" });
   const triggerToast = (message: string, type: "success" | "error" = "success") => {
@@ -1093,9 +1132,24 @@ const CoursePlayer = () => {
           <div className="flex items-center gap-4">
             <button onClick={() => navigate("/student-dashboard")} className="bg-none border-none cursor-pointer text-slate-500 flex items-center gap-2 font-semibold hover:text-slate-800"><ChevronLeft size={20} /> Dashboard</button>
             <div className="h-6 w-px bg-slate-200"></div>
-            <h1 className="text-base font-bold text-slate-900 m-0">{activeLesson?.title || "Course Player"}</h1>
+            
+            {/* ✅ UPDATED: Shows Course Title first (so you see what you are editing) */}
+            <h1 className="text-base font-bold text-slate-900 m-0 max-w-[400px] truncate">
+                {course?.title || activeLesson?.title || "Course Player"}
+            </h1>
           </div>
+
           <div className="flex items-center gap-4">
+            {/* ✅ NEW: EDIT BUTTON (Visible only to Instructor) */}
+            {localStorage.getItem("role") === "instructor" && (
+                <button 
+                    onClick={handleEditClick}
+                    className="flex items-center gap-2 bg-slate-100 text-slate-700 px-3 py-2 rounded-lg font-bold border border-slate-200 hover:bg-slate-200 transition-colors text-sm"
+                >
+                    <Edit size={16} /> Edit Course
+                </button>
+            )}
+
             <button onClick={handlePayment} className="flex items-center gap-2 bg-[#87C232] text-white px-4 py-2 rounded-lg font-bold border-none cursor-pointer hover:bg-[#76a82b] transition-colors"><CreditCard size={18} /> Buy Lifetime Access</button>
             <button onClick={() => setSidebarOpen(!sidebarOpen)} className="bg-none border-none cursor-pointer"><Menu color={brand.textMain} /></button>
           </div>
@@ -1174,6 +1228,93 @@ const CoursePlayer = () => {
            </div>
 
         </aside>
+
+      )}
+      {/* ✅ NEW: EDIT COURSE MODAL */}
+      {isEditing && (
+        <div className="fixed inset-0 z-[9999] bg-black/50 flex items-center justify-center p-4 backdrop-blur-sm animate-fade-in">
+            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden border border-slate-200">
+                <div className="p-5 border-b border-slate-100 flex justify-between items-center bg-slate-50">
+                    <h3 className="font-bold text-lg text-slate-800 flex items-center gap-2">
+                        <Edit size={18} className="text-[#005EB8]" /> Edit Course Details
+                    </h3>
+                    <button onClick={() => setIsEditing(false)} className="p-2 hover:bg-slate-200 rounded-full transition-colors text-slate-500">
+                        <X size={20} />
+                    </button>
+                </div>
+                
+                <div className="p-6 space-y-4 max-h-[70vh] overflow-y-auto">
+                    {/* Title */}
+                    <div>
+                        <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Course Title</label>
+                        <input 
+                            type="text" 
+                            value={editForm.title} 
+                            onChange={e => setEditForm({...editForm, title: e.target.value})} 
+                            className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-[#005EB8]"
+                        />
+                    </div>
+
+                    {/* Description */}
+                    <div>
+                        <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Description</label>
+                        <textarea 
+                            value={editForm.description} 
+                            onChange={e => setEditForm({...editForm, description: e.target.value})} 
+                            rows={3}
+                            className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium text-slate-700 focus:outline-none focus:ring-2 focus:ring-[#005EB8]"
+                        />
+                    </div>
+
+                    <div className="flex gap-4">
+                        {/* Price */}
+                        <div className="flex-1">
+                            <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Price (INR)</label>
+                            <div className="relative">
+                                <span className="absolute left-3 top-3 text-slate-400 font-bold">₹</span>
+                                <input 
+                                    type="number" 
+                                    value={editForm.price} 
+                                    onChange={e => setEditForm({...editForm, price: parseInt(e.target.value)})} 
+                                    className="w-full pl-8 p-3 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-[#005EB8]"
+                                />
+                            </div>
+                        </div>
+
+                        {/* Language */}
+                        <div className="flex-1">
+                             <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Language</label>
+                             <select 
+                                value={editForm.language}
+                                onChange={e => setEditForm({...editForm, language: e.target.value})}
+                                className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-[#005EB8]"
+                             >
+                                <option value="python">Python</option>
+                                <option value="java">Java</option>
+                                <option value="cpp">C++</option>
+                                <option value="javascript">JavaScript</option>
+                             </select>
+                        </div>
+                    </div>
+
+                    {/* Thumbnail */}
+                    <div>
+                        <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Thumbnail URL</label>
+                        <input 
+                            type="text" 
+                            value={editForm.image_url} 
+                            onChange={e => setEditForm({...editForm, image_url: e.target.value})} 
+                            className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs font-mono text-slate-600 focus:outline-none focus:ring-2 focus:ring-[#005EB8]"
+                        />
+                    </div>
+                </div>
+
+                <div className="p-5 border-t border-slate-100 flex gap-3 bg-slate-50">
+                    <button onClick={() => setIsEditing(false)} className="flex-1 py-3 rounded-xl font-bold text-slate-600 hover:bg-slate-200 transition-colors">Cancel</button>
+                    <button onClick={handleSaveChanges} className="flex-1 py-3 rounded-xl font-bold bg-[#005EB8] text-white hover:bg-[#004a94] shadow-lg shadow-blue-200 transition-all">Save Changes</button>
+                </div>
+            </div>
+        </div>
       )}
     </div>
   );

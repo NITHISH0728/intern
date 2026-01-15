@@ -165,6 +165,15 @@ class CourseCreate(BaseModel):
     title: str; description: str; price: int; image_url: Optional[str] = None
     course_type: str = "standard"; language: Optional[str] = None
 
+class CourseUpdate(BaseModel):
+    title: Optional[str] = None
+    description: Optional[str] = None
+    price: Optional[int] = None
+    image_url: Optional[str] = None
+    language: Optional[str] = None
+    # If your DB has a duration column, add it here. If not, remove this line.
+    # duration: Optional[str] = None
+
 class ChallengeCreate(BaseModel):
     title: str; description: str; difficulty: str; test_cases: str
  
@@ -701,6 +710,37 @@ async def publish_course(course_id: int, db: AsyncSession = Depends(get_db), cur
         course.is_published = True
         await db.commit()
     return {"message": "Published"}
+
+@app.patch("/api/v1/courses/{course_id}/details")
+async def update_course_details(
+    course_id: int, 
+    update: CourseUpdate, 
+    db: AsyncSession = Depends(get_db), 
+    current_user: models.User = Depends(require_instructor)
+):
+    # 1. Fetch Course
+    result = await db.execute(select(models.Course).where(models.Course.id == course_id))
+    course = result.scalars().first()
+    
+    if not course:
+        raise HTTPException(status_code=404, detail="Course not found")
+    
+    # 2. Verify Ownership
+    if course.instructor_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Not authorized to edit this course")
+
+    # 3. Update Fields if provided
+    if update.title: course.title = update.title
+    if update.description: course.description = update.description
+    if update.price is not None: course.price = update.price
+    if update.image_url: course.image_url = update.image_url
+    if update.language: course.language = update.language
+    
+    # 4. Save
+    await db.commit()
+    await db.refresh(course)
+    
+    return {"message": "Course updated successfully", "course": course}
 
 @app.get("/api/v1/courses/{course_id}/player")
 async def get_course_player(course_id: int, db: AsyncSession = Depends(get_db), current_user: models.User = Depends(get_current_user)):
