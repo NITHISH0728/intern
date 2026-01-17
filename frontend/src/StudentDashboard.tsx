@@ -838,44 +838,7 @@ const StudentDashboard = () => {
                 </div>
             </motion.div>
         )}
-        {activeTab === "notifications" && (
-            <div className="max-w-4xl mx-auto">
-                <div className="flex justify-between items-center mb-6">
-                    <h2 className="text-2xl font-extrabold text-slate-800">Notifications</h2>
-                    <button onClick={fetchNotifications} className="text-sm font-bold text-[#005EB8] hover:underline">Refresh</button>
-                </div>
-
-                <div className="space-y-4">
-                    {notifications.length === 0 ? (
-                        <div className="text-center py-20 text-slate-400 italic bg-white rounded-xl border border-dashed border-slate-300">
-                            No notifications yet.
-                        </div>
-                    ) : (
-                        notifications.map((notif) => (
-                            <div key={notif.id} className={`p-5 rounded-xl border flex gap-4 ${notif.is_read ? "bg-white border-slate-200" : "bg-blue-50 border-blue-200"}`}>
-                                <div className={`mt-1 p-2 rounded-full ${notif.is_read ? "bg-slate-100 text-slate-400" : "bg-blue-100 text-[#005EB8]"}`}>
-                                    <BellRing size={20} />
-                                </div>
-                                <div className="flex-1">
-                                    <h4 className="font-bold text-slate-800 text-base">{notif.title}</h4>
-                                    <p className="text-slate-600 text-sm mt-1 leading-relaxed">{notif.message}</p>
-                                    <span className="text-xs text-slate-400 mt-2 block">{new Date(notif.created_at).toLocaleString()}</span>
-                                </div>
-                                <button 
-                                    onClick={async () => {
-                                        await axios.delete(`${API_BASE_URL}/notifications/${notif.id}`, { headers: { Authorization: `Bearer ${localStorage.getItem("token")}` } });
-                                        fetchNotifications(); // Refresh list
-                                    }}
-                                    className="h-8 w-8 flex items-center justify-center rounded-full hover:bg-red-50 text-slate-300 hover:text-red-500 transition-colors"
-                                >
-                                    <Trash2 size={16} />
-                                </button>
-                            </div>
-                        ))
-                    )}
-                </div>
-            </div>
-        )}
+       
 
         {activeTab === "learning" && <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">{enrolledCourses.map(c => <CourseCard key={c.id} course={c} type="enrolled" navigate={navigate} />)}</div>}
         
