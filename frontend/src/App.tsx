@@ -18,7 +18,7 @@ import CodeArena from "./CodeArena";
 import Dashboard from "./Dashboard"; 
 import InstructorSettings from "./InstructorSettings"; 
 import StudentManagement from "./StudentManagement";
-
+import Messages from "./Messages";
 // --- Modified CourseList Component ---
 const CourseList = () => {
   const [courses, setCourses] = useState([]);
@@ -163,6 +163,7 @@ function App() {
           <Route path="code-arena" element={<CodeArena />} />
           <Route path="students" element={<StudentManagement />} />
           <Route path="settings" element={<InstructorSettings />} />
+          <Route path="messages" element={<Messages />} />
         </Route>
         
         <Route path="/student-dashboard" element={<ProtectedRoute requiredRole="student"><StudentDashboard /></ProtectedRoute>} />
