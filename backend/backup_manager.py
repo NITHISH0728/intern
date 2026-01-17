@@ -8,7 +8,7 @@ from googleapiclient.http import MediaFileUpload
 from google.auth.transport.requests import Request
 from dotenv import load_dotenv
 import subprocess 
-
+import base64
 # Load env for DB credentials
 load_dotenv()
 
@@ -22,16 +22,38 @@ RETENTION_DAYS = 30
 os.makedirs(BACKUP_DIR, exist_ok=True)
 
 def get_drive_service():
-    """Authenticates with Google Drive using existing token.json"""
+    """Authenticates with Google Drive using Environment Variable or local token.json"""
+    
+    # 1. Check for Env Var and create file if missing
+    # This logic runs on Render to "restore" the file from the variable
+    if not os.path.exists('token.json'):
+        token_b64 = os.getenv("GOOGLE_TOKEN_BASE64")
+        if token_b64:
+            print("🔑 Found GOOGLE_TOKEN_BASE64. Decoding to token.json...")
+            try:
+                with open("token.json", "wb") as f:
+                    f.write(base64.b64decode(token_b64))
+            except Exception as e:
+                print(f"❌ Error decoding token: {e}")
+
+    # 2. Standard Auth Flow
     creds = None
     if os.path.exists('token.json'):
         creds = Credentials.from_authorized_user_file('token.json', ['https://www.googleapis.com/auth/drive.file'])
     
     if not creds or not creds.valid:
         if creds and creds.expired and creds.refresh_token:
-            creds.refresh(Request())
+            print("🔄 Refreshing expired token...")
+            try:
+                creds.refresh(Request())
+                # Note: On Render, we can't easily save the refreshed token back to the Env Var.
+                # Ideally, you generate a token with a long life or use a Service Account.
+                # But for now, this session will work for the backup task.
+            except Exception as e:
+                print(f"❌ Token Refresh Failed: {e}")
+                return None
         else:
-            print("❌ Error: Valid 'token.json' not found. Please run your auth script first.")
+            print("❌ Error: Valid credentials not found.")
             return None
             
     return build('drive', 'v3', credentials=creds)

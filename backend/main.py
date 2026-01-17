@@ -30,6 +30,7 @@ import re
 import schemas
 import random
 import ssl
+import backup_manager
 from dotenv import load_dotenv
 from pydantic import BaseModel
 # --- 📄 PDF GENERATION IMPORTS ---
@@ -472,6 +473,16 @@ async def login(form_data: OAuth2PasswordRequestForm = Depends(), db: AsyncSessi
     
     if not user or not verify_password(form_data.password, user.hashed_password):
         raise HTTPException(status_code=401, detail="Incorrect email or password")
+    
+    # ✅ CHECK 1: Password Verification
+    if not user or not verify_password(form_data.password, user.hashed_password):
+        raise HTTPException(status_code=401, detail="Incorrect email or password")
+    
+    # ✅ CHECK 2: Is the User Active? (Soft Delete Check)
+    if user.is_active is False:  # explicitly check for False
+        raise HTTPException(status_code=403, detail="Account deactivated. Contact support.")
+    
+    
     
     token = create_access_token(data={"sub": user.email, "role": user.role})
     return {"access_token": token, "token_type": "bearer", "role": user.role}
@@ -1034,15 +1045,24 @@ async def get_all_students(db: AsyncSession = Depends(get_db), current_user: mod
 
 @app.delete("/api/v1/admin/students/{user_id}")
 async def delete_student(user_id: int, db: AsyncSession = Depends(get_db), current_user: models.User = Depends(require_instructor)):
+    # 1. Find the student
     res = await db.execute(select(models.User).where(models.User.id == user_id))
     student = res.scalars().first()
-    if not student: raise HTTPException(status_code=404)
     
-    # Cascading delete usually handled by DB, but here manual cleanup if needed
-    # (Assuming DB cascade is on, otherwise manual deletes here)
-    await db.delete(student)
+    if not student: 
+        raise HTTPException(status_code=404, detail="Student not found")
+    
+    # 2. ✅ SOFT DELETE LOGIC (Safe Mode)
+    # instead of db.delete(student), we simply turn them off.
+    student.is_active = False 
+    
+    # Optional: You can append a suffix to the email if you want to allow them to re-register later with the same email.
+    # student.email = f"archived_{student.id}_{student.email}"
+
     await db.commit()
-    return {"message": "Student removed"}
+    
+    return {"message": "Student deactivated successfully. Data has been archived safely."}
+
 
 @app.delete("/api/v1/courses/{course_id}")
 async def delete_course(course_id: int, db: AsyncSession = Depends(get_db), current_user: models.User = Depends(require_instructor)):
@@ -1481,6 +1501,16 @@ async def read_users_me(current_user: models.User = Depends(get_current_user)):
         "role": current_user.role,
         "phone_number": current_user.phone_number
     }
+
+@app.post("/api/v1/admin/trigger-backup")
+async def manual_backup(db: AsyncSession = Depends(get_db), current_user: models.User = Depends(require_instructor)):
+    # Run the backup synchronously
+    backup_path = backup_manager.create_local_backup()
+    if backup_path:
+        backup_manager.upload_to_drive(backup_path)
+        backup_manager.cleanup_old_backups()
+        return {"message": "Backup triggered successfully!"}
+    return {"message": "Backup failed."}
     
 @app.get("/")
 def read_root(): return {"status": "online", "message": "iQmath Military Grade API Active 🟢"}
