@@ -71,16 +71,19 @@ async def init_models():
         await conn.run_sync(models.Base.metadata.create_all)
         
         # 2. ✅ AUTO-MIGRATION: Update existing tables
-        # We use "IF NOT EXISTS" so this is safe to run multiple times.
         print("🔄 Checking for Database Migrations...")
         try:
+            # Existing migrations
             await conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS phone_number VARCHAR;"))
             await conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT TRUE;"))
             await conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT NOW();"))
             await conn.execute(text("ALTER TABLE notifications ADD COLUMN IF NOT EXISTS is_read BOOLEAN DEFAULT FALSE;"))
+            
+            # 🆕 FIX FOR YOUR ERROR: Add last_login column
+            await conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS last_login TIMESTAMP;"))
+            
             print("✅ Database Migrations Applied Successfully!")
         except Exception as e:
-            # If columns already exist or slight error, we print but don't crash
             print(f"⚠️ Migration Note: {e}")
             
             
