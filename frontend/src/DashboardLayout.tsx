@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Outlet, useNavigate, useLocation } from "react-router-dom";
 import { 
   LayoutDashboard, BookOpen, UserPlus, PlusCircle, LogOut, Bell, 
-  ChevronRight, Code, Menu, Settings, Users, FolderOpen // ✅ Added FolderOpen Icon
+  ChevronRight, Code, Menu, Settings, Users, FolderOpen, MessageSquare // ✅ Added FolderOpen Icon
 } from "lucide-react"; 
 
 const DashboardLayout = () => {
@@ -36,12 +36,13 @@ const DashboardLayout = () => {
   const menuItems = [
     { label: "Home", path: "/dashboard", icon: <LayoutDashboard size={20} /> },
     { label: "My Courses", path: "/dashboard/courses", icon: <BookOpen size={20} /> },
+    { label: "Create Course", path: "/dashboard/create-course", icon: <PlusCircle size={20} /> },
     { label: "Code Arena", path: "/dashboard/code-arena", icon: <Code size={20} /> },
     { label: "Add Admits", path: "/dashboard/add-admits", icon: <UserPlus size={20} /> },
     { label: "Students", path: "/dashboard/students", icon: <Users size={20} /> },
     // ✅ NEW: Assignment Verification Link
     { label: "Verification", path: "/dashboard/assignments", icon: <FolderOpen size={20} /> }, 
-    { label: "Create Course", path: "/dashboard/create-course", icon: <PlusCircle size={20} /> },
+    { label: "Messages", path: "/dashboard/messages", icon: <MessageSquare size={20} /> },
   ];
 
   const handleLogout = () => {

@@ -7,7 +7,7 @@ import {
   LayoutDashboard, BookOpen, Compass, Award, LogOut, 
   CheckCircle, AlertTriangle, X, Save, 
   Code, Play, Monitor, ChevronRight,
-  Menu, Sparkles, Zap, User, PlayCircle, Trophy, Lock
+  Menu, Sparkles, Zap, User, PlayCircle, Trophy, Lock, BellRing, Trash2,Settings
 } from "lucide-react";
 import { motion } from "framer-motion";
 
@@ -112,10 +112,13 @@ const StudentDashboard = () => {
   const [availableCourses, setAvailableCourses] = useState<Course[]>([]);
   const [enrolledCourses, setEnrolledCourses] = useState<Course[]>([]);
   const [loading, setLoading] = useState(true);
-  const [currentProgress, setCurrentProgress] = useState({ percent: 0, completed: 0, total: 0 });
+  const [progressMap, setProgressMap] = useState<{[key: number]: { percent: number, completed: number, total: number }}>({});
   const [collapsed, setCollapsed] = useState(false);
   const [showProfileMenu, setShowProfileMenu] = useState(false);
-  
+  const [notifications, setNotifications] = useState<any[]>([]);
+  const [unreadCount, setUnreadCount] = useState(0);
+  const [studentProfile, setStudentProfile] = useState({ name: "Loading...", email: "..." }); 
+  const [newPassword, setNewPassword] = useState("");
   // Modal & Settings
   const [showModal, setShowModal] = useState(false);
   const [selectedCourse, setSelectedCourse] = useState<Course | null>(null);
@@ -166,6 +169,33 @@ const StudentDashboard = () => {
   };
 
   // ✅ INITIAL FETCH WITH SAFETY CHECKS
+  const fetchProfile = async () => {
+      try {
+          const token = localStorage.getItem("token");
+          const res = await axios.get(`${API_BASE_URL}/users/me`, { headers: { Authorization: `Bearer ${token}` } });
+          setStudentProfile({ 
+              name: res.data.full_name, 
+              email: res.data.email 
+          });
+      } catch (e) { console.error("Profile fetch error", e); }
+  };
+
+  const fetchNotifications = async () => {
+      try {
+          const token = localStorage.getItem("token");
+          const res = await axios.get(`${API_BASE_URL}/notifications`, { headers: { Authorization: `Bearer ${token}` } });
+          setNotifications(res.data);
+          setUnreadCount(res.data.filter((n: any) => !n.is_read).length);
+      } catch (e) { console.error("Notif error", e); }
+  };
+
+  useEffect(() => {
+      // Poll every 30s
+      fetchNotifications();
+      const interval = setInterval(fetchNotifications, 30000); 
+      return () => clearInterval(interval);
+  }, []);
+
   const fetchData = async () => {
     setLoading(true);
     try {
@@ -192,6 +222,22 @@ const StudentDashboard = () => {
         setLoading(false); 
     }
   };
+  
+  const handleUpdatePassword = async () => {
+      if (!newPassword) return triggerToast("Please enter a new password", "error");
+      
+      try {
+          const token = localStorage.getItem("token");
+          await axios.post(`${API_BASE_URL}/user/change-password`, 
+              { new_password: newPassword }, 
+              { headers: { Authorization: `Bearer ${token}` } }
+          );
+          triggerToast("Password Updated Successfully!", "success");
+          setNewPassword(""); // ✅ This uses the setter, fixing your error!
+      } catch (err) {
+          triggerToast("Failed to update password", "error");
+      }
+  };
 
   const fetchCodeTests = async () => {
       try {
@@ -207,10 +253,15 @@ const StudentDashboard = () => {
     if (role === "instructor") { navigate("/dashboard"); return; }
     fetchData();
     fetchCodeTests();
+    fetchProfile();
   }, []);
 
-  useEffect(() => {
-    if (enrolledCourses.length > 0) fetchCourseProgress(enrolledCourses[0].id);
+ useEffect(() => {
+    if (enrolledCourses.length > 0) {
+        enrolledCourses.forEach(course => {
+            fetchCourseProgress(course.id);
+        });
+    }
   }, [enrolledCourses]);
 
   const fetchCourseProgress = async (courseId: number) => {
@@ -220,10 +271,20 @@ const StudentDashboard = () => {
             headers: { Authorization: `Bearer ${token}` }
         });
         const modules = res.data?.modules || [];
-        const total = modules.length;
-        const completed = modules.filter((m: any) => m.is_completed).length;
-        const percent = total === 0 ? 0 : Math.round((completed / total) * 100);
-        setCurrentProgress({ percent, completed, total });
+        
+        // Count items that are explicitly completed OR marked complete by instructor
+        const completed = modules.reduce((acc: number, m: any) => acc + m.lessons.filter((l: any) => l.is_completed).length, 0);
+        
+        // Calculate total lessons count, not just modules
+        const totalLessons = modules.reduce((acc: number, m: any) => acc + m.lessons.length, 0);
+        
+        const percent = totalLessons === 0 ? 0 : Math.round((completed / totalLessons) * 100);
+        
+        // Save to map using Course ID as key
+        setProgressMap(prev => ({
+            ...prev,
+            [courseId]: { percent, completed, total: totalLessons }
+        }));
     } catch (err) { console.error("Failed to fetch progress", err); }
   };
 
@@ -595,11 +656,93 @@ const StudentDashboard = () => {
         <button onClick={handleLogout} className="flex items-center gap-3 w-full p-3 rounded-xl text-red-500 hover:bg-red-50 font-bold mt-auto transition-all"><LogOut size={20} /> {!collapsed && "Sign Out"}</button>
       </aside>
 
-      <main className={`flex-1 p-10 transition-all ${collapsed ? "ml-20" : "ml-64"}`}>
+     <main className={`flex-1 p-10 transition-all ${collapsed ? "ml-20" : "ml-64"}`}>
+        
+        {/* 1. UPDATED HEADER with BELL ICON */}
         <header className="flex justify-between items-center mb-8">
-          <h2 className="text-2xl font-extrabold text-slate-800">{activeTab === "test" ? "Active Challenges" : "Dashboard Overview"}</h2>
-          <button onClick={() => setShowProfileMenu(!showProfileMenu)} className="w-10 h-10 rounded-full bg-[#005EB8] text-white flex items-center justify-center"><User size={20} /></button>
+          <h2 className="text-2xl font-extrabold text-slate-800">
+             {activeTab === "notifications" ? "Notifications" : 
+              activeTab === "test" ? "Active Challenges" : "Dashboard Overview"}
+          </h2>
+          
+          <div className="flex items-center gap-6">
+             {/* ✅ NEW: Notification Bell */}
+             <button 
+                onClick={() => { 
+                    setActiveTab("notifications"); 
+                    setUnreadCount(0); 
+                    // Optional: Mark read immediately on click
+                    axios.patch(`${API_BASE_URL}/notifications/read`, {}, { headers: { Authorization: `Bearer ${localStorage.getItem("token")}` } });
+                }} 
+                className="relative bg-white p-2 rounded-full shadow-sm hover:bg-slate-50 transition-colors"
+            >
+              <BellRing size={22} color={brand.textMain} />
+              {unreadCount > 0 && (
+                  <span className="absolute top-0 right-0 w-3 h-3 bg-red-500 border-2 border-white rounded-full"></span>
+              )}
+            </button>
+
+            {/* Profile Button */}
+            <div style={{ position: "relative" }}>
+                <button 
+                    onClick={() => setShowProfileMenu(!showProfileMenu)} 
+                    className="w-10 h-10 rounded-full bg-[#005EB8] text-white flex items-center justify-center font-bold shadow-lg hover:scale-105 transition-transform"
+                >
+                    <User size={20} />
+                </button>
+                
+                {showProfileMenu && (
+                    <div className="absolute right-0 top-14 w-72 bg-white rounded-xl shadow-2xl border border-slate-200 p-5 z-50 animate-fade-in">
+                        <div className="mb-4 border-b border-slate-100 pb-4">
+                            {/* ✅ DYNAMIC NAME & EMAIL */}
+                            <p className="font-extrabold text-slate-800 text-base">{studentProfile.name}</p>
+                            <p className="text-xs text-slate-500 mt-1 truncate">{studentProfile.email}</p>
+                        </div>
+                        
+                        <button 
+                            onClick={() => { setActiveTab("settings"); setShowProfileMenu(false); }} 
+                            className="flex items-center gap-3 w-full p-3 rounded-lg text-slate-600 hover:bg-slate-50 hover:text-[#005EB8] transition-colors text-sm font-bold mb-1"
+                        >
+                            <Settings size={18} /> Settings
+                        </button>
+                        
+                        <button 
+                            onClick={handleLogout} 
+                            className="flex items-center gap-3 w-full p-3 rounded-lg text-red-500 hover:bg-red-50 transition-colors text-sm font-bold"
+                        >
+                            <LogOut size={18} /> Logout
+                        </button>
+                    </div>
+                )}
+            </div>
+          </div>
         </header>
+
+        {/* 2. ✅ NEW: NOTIFICATIONS VIEW TAB */}
+        {activeTab === "notifications" && (
+            <div className="max-w-3xl mx-auto space-y-4 animate-fade-in">
+                {notifications.length === 0 ? (
+                    <div className="text-center py-20 text-slate-400 italic bg-white rounded-xl border border-dashed border-slate-300">
+                        No notifications yet.
+                    </div>
+                ) : (
+                    notifications.map((n) => (
+                        <div key={n.id} className={`p-5 rounded-xl border flex gap-4 transition-all ${n.is_read ? "bg-white border-slate-200" : "bg-blue-50 border-blue-200"}`}>
+                            <div className="p-3 bg-blue-100 text-blue-600 rounded-full h-fit"><BellRing size={20} /></div>
+                            <div className="flex-1">
+                                <h4 className="font-bold text-slate-800">{n.title}</h4>
+                                <p className="text-slate-600 text-sm mt-1">{n.message}</p>
+                                <span className="text-xs text-slate-400 mt-2 block">{new Date(n.created_at).toLocaleString()}</span>
+                            </div>
+                            <button onClick={async () => {
+                                await axios.delete(`${API_BASE_URL}/notifications/${n.id}`, { headers: { Authorization: `Bearer ${localStorage.getItem("token")}` } });
+                                fetchNotifications();
+                            }} className="text-slate-300 hover:text-red-500 h-fit"><Trash2 size={18} /></button>
+                        </div>
+                    ))
+                )}
+            </div>
+        )}
 
         {activeTab === "home" && (
             <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6 }} className="flex flex-col gap-8">
@@ -609,18 +752,129 @@ const StudentDashboard = () => {
                     <StatCard icon={Award} label="Certificates Earned" value={0} />
                     <StatCard icon={Trophy} label="Challenges Attended" value={codeTests.filter(t => t.completed).length} />
                 </div>
-                {enrolledCourses.length > 0 ? (
-                    <motion.div whileHover={{ y: -5 }} className="bg-gradient-to-r from-[#005EB8] to-[#004080] rounded-2xl p-8 text-white shadow-xl relative overflow-hidden"> 
-                        <div className="relative z-10 w-full max-w-lg"> 
-                            <div className="flex items-center gap-3 mb-4 text-blue-200 text-sm font-bold uppercase tracking-wider"><Zap size={16} /> Current Focus</div> 
-                            <h2 className="text-2xl font-bold mb-6">{enrolledCourses[0].title}</h2> 
-                            <div className="w-full bg-blue-900/50 rounded-full h-3 mb-4 overflow-hidden"><motion.div initial={{ width: 0 }} animate={{ width: `${currentProgress.percent}%` }} transition={{ duration: 1.5, ease: "easeOut" }} className="h-full bg-[#87C232] rounded-full"></motion.div></div> 
-                            <div className="flex justify-between text-sm font-medium opacity-90"><span>{currentProgress.percent}% Completed</span><span>{currentProgress.completed}/{currentProgress.total} Modules</span></div> 
-                        </div> 
-                        <button onClick={() => navigate(`/course/${enrolledCourses[0].id}/player`)} className="absolute bottom-8 right-8 bg-white text-[#005EB8] px-6 py-2 rounded-lg font-bold flex items-center gap-2 shadow-lg hover:bg-blue-50 transition-colors">Resume <ChevronRight size={18} /></button> 
-                    </motion.div>
-                ) : ( <div className="bg-white p-10 rounded-2xl border border-dashed border-slate-300 text-center"><p className="text-slate-400">Enroll in a course to track your progress here.</p></div> )}
+               {enrolledCourses.length > 0 ? (
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    {enrolledCourses.map((course) => {
+                        // Get specific progress for this course, or default to 0
+                        const prog = progressMap[course.id] || { percent: 0, completed: 0, total: 0 };
+                        
+                        return (
+                            <motion.div 
+                                key={course.id}
+                                whileHover={{ y: -5 }} 
+                                className="bg-gradient-to-r from-[#005EB8] to-[#004080] rounded-2xl p-8 text-white shadow-xl relative overflow-hidden"
+                            > 
+                                <div className="relative z-10 w-full"> 
+                                    <div className="flex items-center gap-3 mb-4 text-blue-200 text-sm font-bold uppercase tracking-wider">
+                                        <Zap size={16} /> In Progress
+                                    </div> 
+                                    <h2 className="text-2xl font-bold mb-6 truncate">{course.title}</h2> 
+                                    
+                                    {/* Progress Bar */}
+                                    <div className="w-full bg-blue-900/50 rounded-full h-3 mb-4 overflow-hidden">
+                                        <motion.div 
+                                            initial={{ width: 0 }} 
+                                            animate={{ width: `${prog.percent}%` }} 
+                                            transition={{ duration: 1.5, ease: "easeOut" }} 
+                                            className="h-full bg-[#87C232] rounded-full"
+                                        ></motion.div>
+                                    </div> 
+                                    
+                                    <div className="flex justify-between text-sm font-medium opacity-90">
+                                        <span>{prog.percent}% Completed</span>
+                                        <span>{prog.completed}/{prog.total} Lessons</span>
+                                    </div> 
+                                </div> 
+                                
+                                <button 
+                                    onClick={() => navigate(`/course/${course.id}/player`)} 
+                                    className="mt-6 w-full bg-white text-[#005EB8] px-6 py-3 rounded-xl font-bold flex items-center justify-center gap-2 shadow-lg hover:bg-blue-50 transition-colors"
+                                >
+                                    Resume Learning <ChevronRight size={18} />
+                                </button> 
+                            </motion.div>
+                        );
+                    })}
+                </div>
+            ) : ( 
+                <div className="bg-white p-10 rounded-2xl border border-dashed border-slate-300 text-center">
+                    <p className="text-slate-400">Enroll in a course to track your progress here.</p>
+                </div> 
+            )}
             </motion.div>
+        )}
+        {activeTab === "settings" && (
+            <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="max-w-xl mx-auto mt-10">
+                <div className="bg-white p-8 rounded-2xl shadow-sm border border-slate-200">
+                    <div className="flex items-center gap-4 mb-6 border-b border-slate-100 pb-6">
+                        <div className="w-12 h-12 bg-blue-50 rounded-full flex items-center justify-center text-[#005EB8]">
+                            <Lock size={24} />
+                        </div>
+                        <div>
+                            <h2 className="text-xl font-extrabold text-slate-800">Security Settings</h2>
+                            <p className="text-sm text-slate-500">Update your account password</p>
+                        </div>
+                    </div>
+
+                    <div className="space-y-4">
+                        <div>
+                            <label className="block text-xs font-bold text-slate-500 uppercase mb-2">New Password</label>
+                            <input 
+                                type="password" 
+                                value={newPassword}
+                                onChange={(e) => setNewPassword(e.target.value)} // ✅ This uses the setter!
+                                placeholder="Enter new strong password"
+                                className="w-full p-4 bg-slate-50 border border-slate-200 rounded-xl font-medium text-slate-800 outline-none focus:ring-2 focus:ring-[#005EB8] transition-all"
+                            />
+                        </div>
+
+                        <button 
+                            onClick={handleUpdatePassword}
+                            className="w-full py-4 bg-[#005EB8] hover:bg-blue-700 text-white rounded-xl font-bold flex items-center justify-center gap-2 shadow-lg shadow-blue-200 transition-all active:scale-95"
+                        >
+                            <Save size={18} /> Update Password
+                        </button>
+                    </div>
+                </div>
+            </motion.div>
+        )}
+        {activeTab === "notifications" && (
+            <div className="max-w-4xl mx-auto">
+                <div className="flex justify-between items-center mb-6">
+                    <h2 className="text-2xl font-extrabold text-slate-800">Notifications</h2>
+                    <button onClick={fetchNotifications} className="text-sm font-bold text-[#005EB8] hover:underline">Refresh</button>
+                </div>
+
+                <div className="space-y-4">
+                    {notifications.length === 0 ? (
+                        <div className="text-center py-20 text-slate-400 italic bg-white rounded-xl border border-dashed border-slate-300">
+                            No notifications yet.
+                        </div>
+                    ) : (
+                        notifications.map((notif) => (
+                            <div key={notif.id} className={`p-5 rounded-xl border flex gap-4 ${notif.is_read ? "bg-white border-slate-200" : "bg-blue-50 border-blue-200"}`}>
+                                <div className={`mt-1 p-2 rounded-full ${notif.is_read ? "bg-slate-100 text-slate-400" : "bg-blue-100 text-[#005EB8]"}`}>
+                                    <BellRing size={20} />
+                                </div>
+                                <div className="flex-1">
+                                    <h4 className="font-bold text-slate-800 text-base">{notif.title}</h4>
+                                    <p className="text-slate-600 text-sm mt-1 leading-relaxed">{notif.message}</p>
+                                    <span className="text-xs text-slate-400 mt-2 block">{new Date(notif.created_at).toLocaleString()}</span>
+                                </div>
+                                <button 
+                                    onClick={async () => {
+                                        await axios.delete(`${API_BASE_URL}/notifications/${notif.id}`, { headers: { Authorization: `Bearer ${localStorage.getItem("token")}` } });
+                                        fetchNotifications(); // Refresh list
+                                    }}
+                                    className="h-8 w-8 flex items-center justify-center rounded-full hover:bg-red-50 text-slate-300 hover:text-red-500 transition-colors"
+                                >
+                                    <Trash2 size={16} />
+                                </button>
+                            </div>
+                        ))
+                    )}
+                </div>
+            </div>
         )}
 
         {activeTab === "learning" && <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">{enrolledCourses.map(c => <CourseCard key={c.id} course={c} type="enrolled" navigate={navigate} />)}</div>}

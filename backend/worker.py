@@ -6,7 +6,7 @@ import json
 import time
 from celery_config import celery_app
 from dotenv import load_dotenv
-
+import backup_manager
 load_dotenv()
 
 # ✅ LOAD CONFIGURATION
@@ -218,3 +218,16 @@ if __name__ == "__main__":
         }
         
         return {"status": "success", "data": report}
+    
+    
+@celery_app.task(name="worker.run_backup_task")
+def run_backup_task():
+    print("Executing Daily Backup...")
+    
+    # Run the backup logic
+    try:
+        # Option 1: Run via command line (safest to ensure independent execution)
+        os.system("python backup_manager.py")
+        return "Backup Completed"
+    except Exception as e:
+        return f"Backup Failed: {str(e)}"    

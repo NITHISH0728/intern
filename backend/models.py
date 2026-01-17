@@ -11,7 +11,9 @@ class User(Base):
     full_name = Column(String)
     hashed_password = Column(String)
     role = Column(String) 
-    
+    is_active = Column(Boolean, default=True) # If False, user is "banned/deleted" but data exists
+    created_at = Column(DateTime, default=datetime.utcnow) # Know exactly when they joined
+    last_login = Column(DateTime, nullable=True)
     # ... rest of the relationships remain exactly the same ...
     enrollments = relationship("Enrollment", back_populates="student")
     submissions = relationship("Submission", back_populates="student")
@@ -192,3 +194,14 @@ class UserCertificate(Base):
     user = relationship("User")
     course = relationship("Course")    
 
+class Notification(Base):
+    __tablename__ = "notifications"
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"))
+    title = Column(String)
+    message = Column(String)
+    is_read = Column(Boolean, default=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    # Optional: Relationship back to User if you want to access user.notifications
+    user = relationship("User", backref="notifications")

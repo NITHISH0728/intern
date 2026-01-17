@@ -52,6 +52,7 @@ from fastapi import Request  # 👈 Add this explicitly for FastAPI
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseUpload
+from sqlalchemy import text
 
 
 
@@ -65,8 +66,23 @@ load_dotenv()
 import asyncio
 async def init_models():
     async with engine.begin() as conn:
+        # 1. Create tables if they don't exist
         await conn.run_sync(models.Base.metadata.create_all)
-
+        
+        # 2. ✅ AUTO-MIGRATION: Update existing tables
+        # We use "IF NOT EXISTS" so this is safe to run multiple times.
+        print("🔄 Checking for Database Migrations...")
+        try:
+            await conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS phone_number VARCHAR;"))
+            await conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT TRUE;"))
+            await conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT NOW();"))
+            await conn.execute(text("ALTER TABLE notifications ADD COLUMN IF NOT EXISTS is_read BOOLEAN DEFAULT FALSE;"))
+            print("✅ Database Migrations Applied Successfully!")
+        except Exception as e:
+            # If columns already exist or slight error, we print but don't crash
+            print(f"⚠️ Migration Note: {e}")
+            
+            
 app = FastAPI(title="iQmath Pro - Military Grade API")
 limiter = Limiter(key_func=get_remote_address)
 app.state.limiter = limiter
@@ -193,6 +209,18 @@ class OTPLoginRequest(BaseModel):
     
 class ModuleUpdate(BaseModel):
     title: str
+
+class NotificationRequest(BaseModel):
+    target_type: str  # "all", "course", "student"
+    target_id: Optional[int] = None # course_id or user_id
+    message: str
+
+class NotificationResponse(BaseModel):
+    id: int
+    title: str
+    message: str
+    is_read: bool
+    created_at: datetime
         
 # --- 🔑 AUTH LOGIC ---
 def verify_password(plain_password, hashed_password):
@@ -587,6 +615,10 @@ async def create_code_test(test: CodeTestCreate, db: AsyncSession = Depends(get_
         new_prob = models.Problem(test_id=new_test.id, title=prob.title, description=prob.description, difficulty=prob.difficulty, test_cases=prob.test_cases)
         db.add(new_prob)
     await db.commit()
+    students = await db.execute(select(models.User.id).where(models.User.role == "student"))
+    for uid in students.scalars().all():
+        db.add(models.Notification(user_id=uid, title="New Code Arena!", message=f"Challenge '{test.title}' is live. Test your skills now!", created_at=datetime.utcnow()))
+    await db.commit()
     return {"message": "Test Created Successfully!"}
 
 @app.get("/api/v1/courses/{course_id}")
@@ -667,6 +699,10 @@ async def create_course(course: CourseCreate, db: AsyncSession = Depends(get_db)
     db.add(new_course)
     await db.commit()
     await db.refresh(new_course)
+    students = await db.execute(select(models.User.id).where(models.User.role == "student"))
+    for uid in students.scalars().all():
+        db.add(models.Notification(user_id=uid, title="New Course Alert!", message=f"New course '{new_course.title}' is now available.", created_at=datetime.utcnow()))
+    await db.commit()
     return new_course
 
 @app.post("/api/v1/courses/{course_id}/modules")
@@ -817,10 +853,26 @@ async def enroll_student(course_id: int, req: EnrollmentRequest, db: AsyncSessio
 
 @app.get("/api/v1/generate-pdf/{course_id}")
 async def generate_pdf_endpoint(course_id: int, db: AsyncSession = Depends(get_db), current_user: models.User = Depends(get_current_user)):
+    # 1. ✅ SECURITY CHECK: Verify if the certificate record exists in DB
+    # This ensures they have passed the "100% completion" check in the claim endpoint first.
+    cert_res = await db.execute(select(models.UserCertificate).where(
+        models.UserCertificate.user_id == current_user.id, 
+        models.UserCertificate.course_id == course_id
+    ))
+    certificate = cert_res.scalars().first()
+
+    if not certificate:
+        raise HTTPException(status_code=403, detail="Certificate not yet earned. Please complete the course and click 'Claim Certificate' first.")
+
+    # 2. Fetch Course Details
     res = await db.execute(select(models.Course).where(models.Course.id == course_id))
     course = res.scalars().first()
-    # PDF gen is sync CPU bound, run in thread to avoid blocking loop
-    pdf = await asyncio.to_thread(create_certificate_pdf, current_user.full_name, course.title, datetime.now().strftime("%B %d, %Y"))
+    
+    # 3. Generate PDF
+    # We use the date they actually earned it (certificate.issued_at) rather than current time
+    formatted_date = certificate.issued_at.strftime("%B %d, %Y")
+    
+    pdf = await asyncio.to_thread(create_certificate_pdf, current_user.full_name, course.title, formatted_date)
     return StreamingResponse(pdf, media_type="application/pdf")
 
 @app.get("/api/v1/my-courses")
@@ -919,17 +971,19 @@ async def confirm_submission(req: ConfirmationRequest, db: AsyncSession = Depend
     assignment = res.scalars().first()
     if not assignment: raise HTTPException(status_code=404)
 
+    # 1. Create Submission Record
     new_sub = models.Submission(user_id=current_user.id, content_item_id=assignment.id, drive_link=f"Uploaded: {req.file_name}", status="Submitted")
     db.add(new_sub)
 
+    # 2. Mark Lesson as Complete (Green Tick)
     prog_res = await db.execute(select(models.LessonProgress).where(models.LessonProgress.user_id == current_user.id, models.LessonProgress.content_item_id == assignment.id))
     if not prog_res.scalars().first():
         db.add(models.LessonProgress(user_id=current_user.id, content_item_id=assignment.id, is_completed=True))
     
     await db.commit()
-    is_done = await check_and_award_certificate(current_user.id, assignment.module.course_id, db)
-    return {"message": "Submitted", "course_completed": is_done}
-
+    
+    # ✅ Removed certificate logic. Certificate is now only claimed via the "Claim Certificate" button.
+    return {"message": "Submitted"}
 # In main.py
 
 @app.get("/api/v1/admin/students")
@@ -1106,9 +1160,10 @@ async def verify_assignment(submission_id: int, db: AsyncSession = Depends(get_d
     sub = res.scalars().first()
     if not sub: raise HTTPException(status_code=404)
     
+    # 1. Update Status
     sub.status = "Verified"
     
-    # Progress
+    # 2. Ensure Progress is Marked Complete
     prog_res = await db.execute(select(models.LessonProgress).where(models.LessonProgress.user_id == sub.user_id, models.LessonProgress.content_item_id == sub.content_item_id))
     progress = prog_res.scalars().first()
     if not progress:
@@ -1118,12 +1173,7 @@ async def verify_assignment(submission_id: int, db: AsyncSession = Depends(get_d
         
     await db.commit()
     
-    # Certificate check logic...
-    # Need to fetch item to get module to get course (async chain)
-    item_res = await db.execute(select(models.ContentItem).options(selectinload(models.ContentItem.module)).where(models.ContentItem.id == sub.content_item_id))
-    item = item_res.scalars().first()
-    
-    await check_and_award_certificate(sub.user_id, item.module.course_id, db)
+    # ✅ Removed certificate logic.
     return {"message": "Verified"}
 
 @app.post("/api/v1/execute")
@@ -1361,6 +1411,76 @@ async def reorder_module_items(module_id: int, req: ReorderRequest, db: AsyncSes
         )
     await db.commit()
     return {"message": "Order updated"}    
+
+@app.post("/api/v1/notifications/send")
+async def send_notification(req: NotificationRequest, db: AsyncSession = Depends(get_db), current_user: models.User = Depends(require_instructor)):
+    recipients = []
+    
+    # Logic 1: Send to All Students
+    if req.target_type == "all":
+        res = await db.execute(select(models.User.id).where(models.User.role == "student"))
+        recipients = res.scalars().all()
+    
+    # Logic 2: Send to Students in Specific Course
+    elif req.target_type == "course":
+        res = await db.execute(select(models.Enrollment.user_id).where(models.Enrollment.course_id == req.target_id))
+        recipients = res.scalars().all()
+        
+    # Logic 3: Send to Single Student
+    elif req.target_type == "student":
+        recipients = [req.target_id]
+
+    # Bulk Insert
+    for uid in recipients:
+        new_notif = models.Notification(
+            user_id=uid,
+            title="Message from Instructor",
+            message=req.message,
+            is_read=False,
+            created_at=datetime.utcnow()
+        )
+        db.add(new_notif)
+    
+    await db.commit()
+    return {"message": f"Sent to {len(recipients)} students."}
+
+# 2. Student Gets Notifications
+@app.get("/api/v1/notifications")
+async def get_notifications(db: AsyncSession = Depends(get_db), current_user: models.User = Depends(require_student)):
+    res = await db.execute(
+        select(models.Notification)
+        .where(models.Notification.user_id == current_user.id)
+        .order_by(models.Notification.created_at.desc())
+    )
+    return res.scalars().all()
+
+# 3. Mark as Read (Optional, happens when they open the page)
+@app.patch("/api/v1/notifications/read")
+async def mark_notifications_read(db: AsyncSession = Depends(get_db), current_user: models.User = Depends(require_student)):
+    await db.execute(
+        models.Notification.__table__.update()
+        .where(models.Notification.user_id == current_user.id)
+        .values(is_read=True)
+    )
+    await db.commit()
+    return {"message": "Marked read"}
+
+# 4. Delete Notification
+@app.delete("/api/v1/notifications/{notif_id}")
+async def delete_notification(notif_id: int, db: AsyncSession = Depends(get_db), current_user: models.User = Depends(require_student)):
+    await db.execute(delete(models.Notification).where(models.Notification.id == notif_id, models.Notification.user_id == current_user.id))
+    await db.commit()
+    return {"message": "Deleted"}
+
+@app.get("/api/v1/users/me")
+async def read_users_me(current_user: models.User = Depends(get_current_user)):
+    return {
+        "id": current_user.id,
+        "full_name": current_user.full_name,
+        "email": current_user.email,
+        "role": current_user.role,
+        "phone_number": current_user.phone_number
+    }
     
 @app.get("/")
 def read_root(): return {"status": "online", "message": "iQmath Military Grade API Active 🟢"}

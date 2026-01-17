@@ -1,7 +1,8 @@
 import os
 from celery import Celery
+from celery.schedules import crontab
 from dotenv import load_dotenv
-
+import backup_manager
 load_dotenv()
 
 # Get the REDIS_URL from Render, or default to localhost for your laptop
@@ -22,3 +23,10 @@ if "rediss://" in REDIS_URL:
         broker_use_ssl={"ssl_cert_reqs": "none"},
         redis_backend_use_ssl={"ssl_cert_reqs": "none"},
     )
+    
+celery_app.conf.beat_schedule = {
+    'daily-database-backup': {
+        'task': 'worker.run_backup_task',
+        'schedule': crontab(hour=3, minute=0), # Runs at 3:00 AM every day
+    },
+}    
