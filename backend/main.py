@@ -203,9 +203,8 @@ class ConfirmationRequest(BaseModel):
 class CodePayload(BaseModel):
     source_code: str
     language_id: int
-    # ✅ NEW: Accepts a list of test cases (Batch Execution)
-    # Example: [{"input": "5", "output": "25"}, {"input": "10", "output": "100"}]
-    test_cases: List[Dict[str, Any]]
+    stdin: Optional[str] = None       # ✅ Keeps Old Frontend working
+    test_cases: Optional[Any] = None  #
 
 class OTPLoginRequest(BaseModel):
     phone_number: str
@@ -1201,17 +1200,33 @@ async def verify_assignment(submission_id: int, db: AsyncSession = Depends(get_d
 
 @app.post("/api/v1/execute")
 async def execute_code(payload: CodePayload):
+    # Logic: If 'test_cases' is provided, we use that (Batch Mode).
+    # If not, we fall back to 'stdin' (Single Mode).
     
-    # ✅ FIX: Use json.dumps() to ensure double quotes (Valid JSON)
-    test_cases_str = json.dumps(payload.test_cases)
+    input_data = ""
+    mode = "single"
 
+    if payload.test_cases:
+        mode = "batch"
+        # Ensure it is a JSON string for the worker
+        if isinstance(payload.test_cases, str):
+            input_data = payload.test_cases
+        else:
+            input_data = json.dumps(payload.test_cases)
+    else:
+        # Fallback for old frontend
+        input_data = payload.stdin or ""
+
+    # Send to Worker with a 'mode' flag so it knows what to do
+    # We pack the mode into the input string with a separator, or handle it in the worker
+    # SIMPLEST WAY: We rely on the worker to detect if it's a JSON list or raw text.
+    
     task = celery_app.send_task(
         "worker.run_code_task", 
-        args=[payload.source_code, payload.language_id, test_cases_str]
+        args=[payload.source_code, payload.language_id, input_data, mode] 
     )
     
-    return {"task_id": task.id, "message": "Batch Execution Queued"}
-# --- ✅ COMPLETION LOGIC ENDPOINTS ---
+    return {"task_id": task.id, "message": "Execution Queued"}
 
 # 1. Toggle Item Completion (The Green Tick)
 @app.post("/api/v1/content/{item_id}/complete")

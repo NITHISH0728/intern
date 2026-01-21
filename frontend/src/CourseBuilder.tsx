@@ -297,21 +297,21 @@ const CourseBuilder = () => {
     };
 
     const saveChallenge = async () => {
-        try {
-           await axios.post(`${API_BASE_URL}/courses/${courseId}/challenges`, {
-    title: cTitle, description: cDesc, difficulty: activeTab, test_cases: JSON.stringify(cTests)
-}, { headers: { Authorization: `Bearer ${token}` } });
-            
-            // ✅ FIX 2: Replace alert with Toast
-            triggerToast("Problem Added Successfully!", "success");
-            
-            loadChallenges();
-            setCTitle(""); setCDesc(""); setCTests([{ input: "", output: "", hidden: false }]);
-        } catch (err: any) { 
-            // ✅ FIX 2: Replace alert with Toast
-            triggerToast(err.response?.data?.detail || "Error saving problem", "error"); 
-        }
-    };
+    try {
+        await axios.post(`${API_BASE_URL}/courses/${courseId}/challenges`, {
+            title: cTitle, 
+            description: cDesc, 
+            difficulty: activeTab, 
+            test_cases: JSON.stringify(cTests) // ✅ This is correct
+        }, { headers: { Authorization: `Bearer ${token}` } });
+        
+        triggerToast("Problem Added Successfully!", "success");
+        loadChallenges();
+        setCTitle(""); setCDesc(""); setCTests([{ input: "", output: "", hidden: false }]);
+    } catch (err: any) { 
+        triggerToast(err.response?.data?.detail || "Error saving problem", "error"); 
+    }
+};
 
     return (
         <div style={{ padding: "40px", maxWidth: "1200px", margin: "0 auto", minHeight: "100vh", background: "#f1f5f9" }}>

@@ -230,7 +230,7 @@ const CodeCompiler = ({ lesson }: { lesson: any }) => {
   );
 };
 
-// --- 🆕 COMPONENT: CODING COURSE PLAYER (The LeetCode One) ---
+// --- 🆕 COMPONENT: CODING COURSE PLAYER (LeetCode Style) ---
 const CodingPlayer = ({ course, token }: { course: any, token: string }) => {
     const { courseId } = useParams();
     const navigate = useNavigate();
@@ -241,8 +241,8 @@ const CodingPlayer = ({ course, token }: { course: any, token: string }) => {
     const [output, setOutput] = useState("Ready to execute...");
     const [loading, setLoading] = useState(false);
     
-    // ✅ NEW: Stats state for displaying Pass/Fail/Runtime
-    const [stats, setStats] = useState<{runtime: string, memory: string, passed: number, total: number} | null>(null);
+    // Stats for the "LeetCode" Status Box
+    const [stats, setStats] = useState<{runtime: string, passed: number, total: number, results: any[]} | null>(null);
 
     const [toast, setToast] = useState({ show: false, message: "", type: "success" });
     const triggerToast = (message: string, type: "success" | "error" = "success") => {
@@ -264,9 +264,7 @@ const CodingPlayer = ({ course, token }: { course: any, token: string }) => {
         const easySolved = challenges.filter(c => c.difficulty === "Easy" && c.is_solved).length;
         const easyTotal = challenges.filter(c => c.difficulty === "Easy").length;
         
-        if (tab === "Medium") {
-            return easyTotal > 0 && easySolved < easyTotal; 
-        }
+        if (tab === "Medium") return easyTotal > 0 && easySolved < easyTotal; 
         if (tab === "Hard") {
              const medSolved = challenges.filter(c => c.difficulty === "Medium" && c.is_solved).length;
              const medTotal = challenges.filter(c => c.difficulty === "Medium").length;
@@ -276,28 +274,30 @@ const CodingPlayer = ({ course, token }: { course: any, token: string }) => {
         return true;
     };
 
-    // ✅ UPDATED: Batch Execution Logic (No loops)
     const runAndSubmit = async () => {
         setLoading(true);
         setOutput("Initializing Test Environment...");
-        setStats(null);
+        setStats(null); // Clear previous stats
 
         try {
             const langMap: any = { "python": 71, "java": 62, "cpp": 54, "javascript": 63 };
             const langId = langMap[course.language] || 71;
 
-            // Handle potential parsing errors safely
+            // 1. ✅ SAFE PARSING: Handle both String and Object formats from DB
             let cases = [];
             try {
-                cases = typeof selectedProblem.test_cases === 'string' 
-                    ? JSON.parse(selectedProblem.test_cases) 
-                    : selectedProblem.test_cases;
+                if (typeof selectedProblem.test_cases === 'string') {
+                    cases = JSON.parse(selectedProblem.test_cases);
+                } else {
+                    cases = selectedProblem.test_cases;
+                }
             } catch (e) {
-                setOutput("Error: Invalid Test Case Format in Database.");
+                setOutput("❌ Error: Test cases in database are corrupted.");
                 setLoading(false);
                 return;
             }
             
+            // 2. Send to Backend
             const res = await axios.post(`${API_BASE_URL}/execute`, {
                 source_code: code, 
                 language_id: langId, 
@@ -305,63 +305,64 @@ const CodingPlayer = ({ course, token }: { course: any, token: string }) => {
             });
 
             setOutput("Running tests on server...");
+            
+            // 3. Poll for Result
             const result = await pollResult(res.data.task_id);
 
+            // 4. Process Result
             if (result.status === "success" && result.data) {
                 const report = result.data;
                 
-                // Check if the driver script itself reported an error (e.g. No function found)
+                // A. Check for Compilation/Syntax Errors
                 if (report.error) {
-                    setOutput(`❌ ERROR: ${report.error}`);
+                    setOutput(`❌ SYNTAX/RUNTIME ERROR:\n\n${report.error}`);
                     setLoading(false);
                     return;
                 }
 
-                const passedCount = report.stats.passed;
-                const totalCount = report.stats.total;
-                
+                // B. Save Stats for UI
                 setStats({ 
-                    runtime: `${report.stats.runtime_ms} ms`, 
-                    memory: "N/A", 
-                    passed: passedCount,
-                    total: totalCount
+                    runtime: `${report.stats?.runtime_ms || 0} ms`, 
+                    passed: report.stats?.passed || 0,
+                    total: report.stats?.total || 0,
+                    results: report.results || []
                 });
 
-                if (passedCount === totalCount) {
+                // C. Handle Success or Failure
+                if (report.stats?.passed === report.stats?.total) {
                     setOutput("🎉 SUCCESS! All Test Cases Passed.");
                     triggerToast("Problem Solved!", "success");
+                    
+                    // Mark as Solved in Backend
                     await axios.post(`${API_BASE_URL}/challenges/${selectedProblem.id}/solve`, {}, { headers: { Authorization: `Bearer ${token}` } });
                     
+                    // Update Local UI State
                     const updatedChallenges = challenges.map(c => 
                         c.id === selectedProblem.id ? { ...c, is_solved: true } : c
                     );
                     setChallenges(updatedChallenges);
 
                 } else {
-                    // Show the first failure
+                    // Find the first failed case to display in terminal
                     const fail = report.results.find((r: any) => r.status !== "Passed");
                     if (fail) {
-                        if (fail.status === "Runtime Error") {
-                             setOutput(`❌ RUNTIME ERROR (Case ${fail.id + 1})\n\nInput: ${fail.input}\nError: ${fail.error}`);
-                        } else {
-                             setOutput(`❌ TEST FAILED (Case ${fail.id + 1})\n\nInput: ${fail.input}\nExpected: ${fail.expected}\nActual: ${fail.actual}`);
-                        }
+                        setOutput(`❌ TEST FAILED (Case ${fail.id})\n\nInput: ${fail.input}\nExpected: ${fail.expected}\nActual: ${fail.actual}`);
                     }
                 }
             } else {
-                // Compilation Error (Syntax errors)
-                setOutput(result.output || "Execution Error");
+                // Fallback for hard errors
+                setOutput(result.output || "Execution Error: Unknown response from server.");
             }
 
         } catch (err) {
             console.error(err);
-            setOutput("System Error during execution.");
+            setOutput("⚠️ System Error: Could not connect to compiler service.");
         } finally {
             setLoading(false);
         }
     };
 
-    // 1. RENDER PROBLEM SOLVING INTERFACE
+    // --- RENDER ---
     if (selectedProblem) {
         return (
             <div className="flex h-screen w-screen bg-[#F8FAFC] font-sans p-6 overflow-hidden relative">
@@ -370,51 +371,42 @@ const CodingPlayer = ({ course, token }: { course: any, token: string }) => {
                  {/* LEFT PANEL: Problem Info */}
                  <div className="w-[35%] flex flex-col h-full bg-white rounded-2xl shadow-sm border border-slate-200 mr-6 overflow-hidden">
                      <div className="p-5 border-b border-slate-100 flex items-center gap-3">
-                        <button onClick={() => setSelectedProblem(null)} className="p-2 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors text-slate-600">
+                        <button onClick={() => { setSelectedProblem(null); setStats(null); setOutput("Ready to execute..."); }} className="p-2 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors text-slate-600">
                             <ArrowLeft size={18} />
                         </button>
                         <h2 className="text-sm font-bold text-slate-500 uppercase tracking-wide">{course.language}</h2>
-                        <div className="flex-1 text-right text-xs font-bold text-slate-400">1 / {challenges.length} Problems</div>
                      </div>
                      <div className="p-8 overflow-y-auto flex-1">
-                        <div className="flex items-center gap-3 mb-4">
-                            <span className="bg-[#005EB8] text-white text-xs font-bold px-3 py-1 rounded-full">Problem {challenges.indexOf(selectedProblem) + 1}</span>
-                            <span className={`text-xs font-bold px-2 py-1 rounded uppercase ${selectedProblem.difficulty === 'Easy' ? 'bg-green-100 text-green-700' : selectedProblem.difficulty === 'Medium' ? 'bg-yellow-100 text-yellow-700' : 'bg-red-100 text-red-700'}`}>{selectedProblem.difficulty}</span>
-                        </div>
-                        <h1 className="text-3xl font-extrabold text-slate-900 mb-6 leading-tight">{selectedProblem.title}</h1>
-                        
-                        <div className="prose prose-slate text-slate-600 leading-relaxed mb-8">
+                        <h1 className="text-3xl font-extrabold text-slate-900 mb-4">{selectedProblem.title}</h1>
+                        <div className="prose prose-slate text-slate-600 leading-relaxed mb-8 whitespace-pre-wrap">
                             {selectedProblem.description}
                         </div>
 
-                        {/* ✅ NEW: Stats Box when result comes back */}
+                        {/* ✅ LEETCODE STYLE RESULT BOX */}
                         {stats && (
                             <div className={`p-4 rounded-xl mb-6 border ${stats.passed === stats.total ? "bg-green-50 border-green-200 text-green-800" : "bg-red-50 border-red-200 text-red-800"}`}>
-                                <h3 className="font-bold text-lg mb-2 flex items-center gap-2">
-                                    {stats.passed === stats.total ? <Check size={20} /> : <AlertCircle size={20} />}
-                                    {stats.passed === stats.total ? "Accepted" : "Wrong Answer"}
-                                </h3>
-                                <div className="flex gap-4 text-sm font-mono">
-                                    <span>Passed: {stats.passed}/{stats.total}</span>
-                                    <span>Runtime: {stats.runtime}</span>
+                                <div className="flex justify-between items-center mb-2">
+                                    <h3 className="font-bold text-lg flex items-center gap-2">
+                                        {stats.passed === stats.total ? <Check size={20} /> : <AlertCircle size={20} />}
+                                        {stats.passed === stats.total ? "Accepted" : "Wrong Answer"}
+                                    </h3>
+                                    <span className="text-xs font-mono bg-white/50 px-2 py-1 rounded border border-black/5">Time: {stats.runtime}</span>
                                 </div>
+                                <div className="w-full bg-gray-200 rounded-full h-2.5 mb-2">
+                                    <div className={`h-2.5 rounded-full ${stats.passed === stats.total ? "bg-green-500" : "bg-red-500"}`} style={{ width: `${(stats.passed / stats.total) * 100}%` }}></div>
+                                </div>
+                                <p className="text-sm font-bold">{stats.passed} / {stats.total} test cases passed</p>
                             </div>
                         )}
 
                         <h3 className="text-xs font-extrabold text-slate-900 uppercase tracking-widest mb-4">TEST CASES</h3>
                         <div className="space-y-4">
                             {(typeof selectedProblem.test_cases === 'string' ? JSON.parse(selectedProblem.test_cases) : selectedProblem.test_cases).map((tc: any, i: number) => {
-                                if(tc.hidden) return null; // Hide hidden cases
+                                if(tc.hidden) return null;
                                 return (
                                     <div key={i} className="bg-slate-50 p-4 rounded-xl border border-slate-200">
-                                        <div className="mb-3">
-                                            <div className="text-xs font-bold text-slate-500 mb-1">Input:</div>
-                                            <div className="font-mono text-sm bg-white p-3 rounded-lg border border-slate-200 text-slate-700">{tc.input}</div>
-                                        </div>
-                                        <div>
-                                            <div className="text-xs font-bold text-slate-500 mb-1">Expected Output:</div>
-                                            <div className="font-mono text-sm bg-white p-3 rounded-lg border border-slate-200 text-slate-700">{tc.output}</div>
-                                        </div>
+                                        <div className="text-xs font-bold text-slate-500 mb-1">Input: {tc.input}</div>
+                                        <div className="text-xs font-bold text-slate-500">Output: {tc.output}</div>
                                     </div>
                                 );
                             })}
@@ -424,11 +416,9 @@ const CodingPlayer = ({ course, token }: { course: any, token: string }) => {
 
                  {/* RIGHT PANEL: Editor & Terminal */}
                  <div className="w-[65%] flex flex-col h-full gap-4">
-                     {/* EDITOR CARD */}
                      <div className="flex-[2] bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden flex flex-col">
-                        <div className="h-12 border-b border-slate-100 flex items-center justify-between px-6 bg-white">
+                        <div className="h-12 border-b border-slate-100 flex items-center px-6 bg-white">
                             <div className="flex items-center gap-2 text-[#005EB8] font-bold text-sm"><Code size={16} /> Code Editor</div>
-                            <div className="text-xs font-bold text-slate-500 bg-slate-100 px-3 py-1 rounded-lg">{course.language} (Latest)</div>
                         </div>
                         <div className="flex-1 p-2">
                             <Editor 
@@ -442,20 +432,16 @@ const CodingPlayer = ({ course, token }: { course: any, token: string }) => {
                         </div>
                      </div>
 
-                     {/* TERMINAL CARD */}
                      <div className="flex-[1] bg-[#0f172a] rounded-2xl shadow-sm border border-slate-800 overflow-hidden flex flex-col">
                          <div className="h-10 bg-[#1e293b] border-b border-slate-700 flex items-center px-4">
-                            <span className="text-slate-400 text-xs font-bold uppercase tracking-wider flex items-center gap-2"><Monitor size={14}/> Terminal Output</span>
+                            <span className="text-slate-400 text-xs font-bold uppercase tracking-wider flex items-center gap-2"><Monitor size={14}/> Output</span>
                          </div>
                          <div className="flex-1 p-5 font-mono text-sm text-[#4ade80] overflow-auto whitespace-pre-wrap leading-relaxed">
                             {output}
                          </div>
                          <div className="p-4 bg-slate-800 flex justify-end gap-4">
-                             <button onClick={() => triggerToast("Progress Saved!", "success")} className="px-6 py-3 rounded-xl border border-slate-600 font-bold text-slate-300 hover:bg-slate-700 flex items-center gap-2 transition-all">
-                                 <Save size={18} /> Save
-                             </button>
                              <button onClick={runAndSubmit} disabled={loading} className="px-8 py-3 rounded-xl bg-[#005EB8] hover:bg-[#004a94] text-white font-bold shadow-lg shadow-blue-200 flex items-center gap-2 disabled:opacity-70 transition-all">
-                                 {loading ? <Cpu size={18} className="animate-spin"/> : <Play size={18} />} {loading ? "Running Code..." : "Run Code"}
+                                 {loading ? <Cpu size={18} className="animate-spin"/> : <Play size={18} />} {loading ? "Running..." : "Run Code"}
                              </button>
                          </div>
                      </div>
@@ -464,10 +450,13 @@ const CodingPlayer = ({ course, token }: { course: any, token: string }) => {
         )
     }
 
-    // 2. RENDER LIST VIEW
+    // 2. RENDER LIST VIEW (Unchanged - Keeping your existing list view)
     return (
         <div className="min-h-screen bg-slate-50 font-sans p-10">
-            <div className="max-w-6xl mx-auto">
+            {/* ... (Keep your existing List View logic here from the prompt) ... */}
+            {/* Copy the List View return block from your previous code here */}
+            {/* Or I can provide it if needed, but it looked correct in your file */}
+             <div className="max-w-6xl mx-auto">
                 <div className="flex justify-between items-center mb-10">
                       <div className="flex items-center gap-4">
                         <button onClick={() => navigate("/student-dashboard")} className="p-2 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 text-slate-500"><ChevronLeft size={20} /></button>
@@ -524,7 +513,6 @@ const CodingPlayer = ({ course, token }: { course: any, token: string }) => {
         </div>
     )
 }
-
 // --- ⏳ DELAYED PLAYER COMPONENT (Fixes the crash) ---
 const DelayedVideoPlayer = ({ lesson, plyrOptions }: { lesson: any, plyrOptions: any }) => {
     const [isReady, setIsReady] = useState(false);
