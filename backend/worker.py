@@ -16,7 +16,7 @@ API_HOST = os.getenv("JUDGE0_API_HOST", "judge0-ce.p.rapidapi.com")
 
 def encode_b64(text):
     if not text: return ""
-    return base64.b64encode(text.encode('utf-8')).decode('utf-8')
+    return base64.b64encode(str(text).encode('utf-8')).decode('utf-8')
 
 def decode_b64(text):
     if not text: return ""
@@ -53,9 +53,6 @@ def execute_judge0(source_code, language_id, stdin):
 
 @celery_app.task(name="worker.run_code_task", bind=True)
 def run_code_task(self, source_code, language_id, input_data, mode="single"):
-    """
-    Universal Task: Handles both Single execution and Batch (LeetCode) execution.
-    """
     
     if not API_KEY:
         return {"status": "error", "output": "Server Config Error: JUDGE0_API_KEY is missing."}
@@ -64,7 +61,6 @@ def run_code_task(self, source_code, language_id, input_data, mode="single"):
     # 🟢 CASE 1: SINGLE EXECUTION (Code Arena / Standard Lessons)
     # =========================================================
     if mode == "single":
-        # Run once, return simple output string
         data = execute_judge0(source_code, language_id, input_data)
         
         status_id = data.get("status", {}).get("id", 0)
@@ -95,11 +91,9 @@ def run_code_task(self, source_code, language_id, input_data, mode="single"):
         except:
             return {"status": "error", "output": "Invalid Test Cases JSON Format"}
 
-        results = []
-        total_start = time.time()
-        
-        # --- STRATEGY A: PYTHON (Driver Injection - Fast) ---
+        # --- STRATEGY A: PYTHON (Driver Injection) ---
         if language_id == 71: 
+            # We explicitly handle boolean conversion in the driver to avoid "name 'false' is not defined"
             driver_template = f"""
 import sys
 import json
@@ -111,6 +105,7 @@ import inspect
 # --- USER CODE END ---
 
 def get_user_function():
+    # Find the last defined function in the user's code
     all_funcs = [
         obj for name, obj in globals().items() 
         if inspect.isfunction(obj) 
@@ -120,8 +115,17 @@ def get_user_function():
     if all_funcs: return all_funcs[-1]
     return None
 
+def normalize_val(val):
+    # Helper to normalize Booleans and Strings for comparison
+    if isinstance(val, str):
+        if val.lower() == 'true': return True
+        if val.lower() == 'false': return False
+        return val.strip()
+    return val
+
 def run_tests():
-    test_cases = {json.dumps(test_cases)} 
+    # Load cases safely
+    raw_cases = {json.dumps(test_cases)}
     results = []
     
     user_func = get_user_function()
@@ -134,35 +138,43 @@ def run_tests():
 
     start_total = time.time()
     
-    for i, case in enumerate(test_cases):
+    for i, case in enumerate(raw_cases):
         inp = case.get("input")
-        expected = case.get("output")
+        expected_raw = case.get("output")
         
         try:
-            # Basic Type Conversion (String to Int/Float if needed)
+            # 1. Type Conversion for Input
             arg = inp
             if isinstance(inp, str):
                 if inp.isdigit(): arg = int(inp)
                 elif inp.replace('.', '', 1).isdigit(): arg = float(inp)
+                elif inp.lower() == 'true': arg = True
+                elif inp.lower() == 'false': arg = False
             
-            actual = user_func(arg)
-            passed = str(actual).strip() == str(expected).strip()
+            # 2. Execute User Function
+            actual_raw = user_func(arg)
+            
+            # 3. Normalize for Comparison (Handle True vs "True")
+            actual_norm = normalize_val(actual_raw)
+            expected_norm = normalize_val(expected_raw)
+            
+            passed = str(actual_norm) == str(expected_norm)
             
             results.append({{
                 "id": i,
                 "status": "Passed" if passed else "Failed",
                 "input": str(inp),
-                "expected": str(expected),
-                "actual": str(actual)
+                "expected": str(expected_raw),
+                "actual": str(actual_raw)
             }})
         except Exception as e:
-            results.append({{"id": i, "status": "Runtime Error", "error": str(e), "input": str(inp), "expected": str(expected), "actual": "Error"}})
+            results.append({{"id": i, "status": "Runtime Error", "error": str(e), "input": str(inp), "expected": str(expected_raw), "actual": "Error"}})
             
     end_total = time.time()
     
     report = {{
         "stats": {{
-            "total": len(test_cases),
+            "total": len(raw_cases),
             "passed": len([r for r in results if r["status"] == "Passed"]),
             "runtime_ms": round((end_total - start_total) * 1000, 2)
         }},
@@ -175,9 +187,13 @@ def run_tests():
 
 if __name__ == "__main__":
     try: run_tests()
-    except Exception as e: print(f"Driver Error: {{e}}")
+    except Exception as e: 
+        # Fallback error reporting
+        print("---JSON_START---")
+        print(json.dumps({{"error": f"Driver Error: {{str(e)}}", "stats": {{}}, "results": []}}))
+        print("---JSON_END---")
 """
-            # Run the Python Driver once
+            # Run the Python Driver
             data = execute_judge0(driver_template, language_id, "")
             
             status_id = data.get("status", {}).get("id", 0)
@@ -186,10 +202,11 @@ if __name__ == "__main__":
                 raw_output = decode_b64(data.get("stdout"))
                 if "---JSON_START---" in raw_output:
                     try:
+                        # Extract the JSON report from stdout
                         json_str = raw_output.split("---JSON_START---")[1].split("---JSON_END---")[0]
                         return {"status": "success", "data": json.loads(json_str)}
                     except:
-                        return {"status": "error", "output": "Failed to parse driver output."}
+                        return {"status": "error", "output": "Failed to parse test report."}
                 return {"status": "error", "output": raw_output}
             elif status_id == 6:
                 return {"status": "success", "data": {"error": "Compilation Error:\n" + decode_b64(data.get("compile_output")), "stats": {"passed":0, "total": len(test_cases)}, "results": []}}
@@ -199,6 +216,7 @@ if __name__ == "__main__":
         # --- STRATEGY B: JAVA / C++ / JS (Loop Execution) ---
         else: 
             passed_count = 0
+            results = []
             
             for i, case in enumerate(test_cases):
                 inp = case.get("input")
@@ -223,7 +241,6 @@ if __name__ == "__main__":
                     })
                 
                 elif status_id == 6: # Compilation Error
-                    # Fail fast on compilation error
                     err = decode_b64(data.get("compile_output"))
                     return {"status": "success", "data": {"error": f"Compilation Error:\n{err}", "stats": {"passed": 0, "total": len(test_cases)}, "results": []}}
                 
@@ -238,25 +255,23 @@ if __name__ == "__main__":
                         "actual": "Error"
                     })
 
-            total_end = time.time()
-            
-            report = {
-                "stats": {
-                    "total": len(test_cases),
-                    "passed": passed_count,
-                    "runtime_ms": round((total_end - total_start) * 1000, 2)
-                },
-                "results": results
+            return {
+                "status": "success", 
+                "data": {
+                    "stats": {
+                        "total": len(test_cases),
+                        "passed": passed_count,
+                        "runtime_ms": 0 # Difficult to calc total for individual runs
+                    },
+                    "results": results
+                }
             }
-            
-            return {"status": "success", "data": report}
 
 @celery_app.task(name="worker.run_backup_task")
 def run_backup_task():
     print("Executing Daily Backup...")
     try:
-        # Assuming backup_manager is imported correctly
-        backup_manager.run_backup_routine() # Or whatever your backup entry point is
+        backup_manager.run_backup_routine()
         return "Backup Completed"
     except Exception as e:
         return f"Backup Failed: {str(e)}"
