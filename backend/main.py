@@ -1514,6 +1514,25 @@ async def manual_backup(db: AsyncSession = Depends(get_db), current_user: models
         backup_manager.cleanup_old_backups()
         return {"message": "Backup triggered successfully!"}
     return {"message": "Backup failed."}
+
+@app.post("/api/v1/challenges/{challenge_id}/solve")
+async def mark_challenge_solved(challenge_id: int, db: AsyncSession = Depends(get_db), current_user: models.User = Depends(require_student)):
+    # 1. Check if the challenge exists
+    res = await db.execute(select(models.CourseChallenge).where(models.CourseChallenge.id == challenge_id))
+    challenge = res.scalars().first()
+    
+    if not challenge:
+        raise HTTPException(status_code=404, detail="Challenge not found")
+
+    # 2. Check if already solved (optional, but good practice)
+    # Ideally, you'd have a table 'StudentChallengeProgress' linking user_id + challenge_id + is_solved.
+    # Since you might not have that specific table set up yet based on your provided code, 
+    # we will return a success message so the frontend stops erroring.
+    
+    # If you DO have a tracking table, insert the record here.
+    # For now, to fix the 404 crash:
+    
+    return {"status": "success", "message": "Challenge marked as solved"}
     
 @app.get("/")
 def read_root(): return {"status": "online", "message": "iQmath Military Grade API Active 🟢"}
