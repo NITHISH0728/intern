@@ -265,56 +265,81 @@ const CourseBuilder = () => {
     setActiveProblemIndex(0);
   };
 
-  // ✅ NEW: CODING COURSE BUILDER SUB-COMPONENT (Internal)
+// Inside CourseBuilder.tsx, find the CodingCourseBuilder component and replace it with this:
+
   const CodingCourseBuilder = () => {
     const [activeTab, setActiveTab] = useState("Easy"); // Easy, Medium, Hard
     const [challenges, setChallenges] = useState<any[]>([]);
+    
+    // Form State
     const [cTitle, setCTitle] = useState("");
     const [cDesc, setCDesc] = useState("");
+    // ✅ Logic: Default empty test case structure
     const [cTests, setCTests] = useState([{ input: "", output: "", hidden: false }]);
     const [loadingAI, setLoadingAI] = useState(false);
+    
     const token = localStorage.getItem("token");
 
     useEffect(() => { loadChallenges(); }, [courseId]);
 
     const loadChallenges = async () => {
-         const res = await axios.get(`${API_BASE_URL}/courses/${courseId}/challenges`, { headers: { Authorization: `Bearer ${token}` } });
-         setChallenges(res.data);
+         try {
+             const res = await axios.get(`${API_BASE_URL}/courses/${courseId}/challenges`, { headers: { Authorization: `Bearer ${token}` } });
+             setChallenges(res.data);
+         } catch(e) { console.error(e); }
     };
 
     const handleAutoFill = async () => {
+        if(!cTitle) return triggerToast("Enter a title first", "error");
         setLoadingAI(true);
         try {
             const res = await axios.post(`${API_BASE_URL}/ai/generate-challenge`, { title: cTitle });
             setCDesc(res.data.description);
+            // ✅ Logic: Ensure AI response is parsed correctly into our array format
             const parsedTests = typeof res.data.test_cases === 'string' ? JSON.parse(res.data.test_cases) : res.data.test_cases;
             setCTests(parsedTests);
+            triggerToast("AI Content Generated!", "success");
         } catch(err) { 
-            // ✅ FIX 2: Replace alert with Toast
             triggerToast("AI Generation Failed. Try again.", "error"); 
         }
         setLoadingAI(false);
     };
 
     const saveChallenge = async () => {
-    try {
-        await axios.post(`${API_BASE_URL}/courses/${courseId}/challenges`, {
-            title: cTitle, 
-            description: cDesc, 
-            difficulty: activeTab, 
-            test_cases: JSON.stringify(cTests) // ✅ This is correct
-        }, { headers: { Authorization: `Bearer ${token}` } });
-        
-        triggerToast("Problem Added Successfully!", "success");
-        loadChallenges();
-        setCTitle(""); setCDesc(""); setCTests([{ input: "", output: "", hidden: false }]);
-    } catch (err: any) { 
-        triggerToast(err.response?.data?.detail || "Error saving problem", "error"); 
-    }
-};
+        if(!cTitle || !cDesc) return triggerToast("Title and Description required", "error");
+
+        try {
+            // ✅ Logic: Stringify the array so it stores as a JSON string in DB
+            // This matches exactly what CodeArena does.
+            const testCasesString = JSON.stringify(cTests);
+
+            await axios.post(`${API_BASE_URL}/courses/${courseId}/challenges`, {
+                title: cTitle, 
+                description: cDesc, 
+                difficulty: activeTab, 
+                test_cases: testCasesString 
+            }, { headers: { Authorization: `Bearer ${token}` } });
+            
+            triggerToast("Problem Added Successfully!", "success");
+            loadChallenges();
+            // Reset Form
+            setCTitle(""); setCDesc(""); setCTests([{ input: "", output: "", hidden: false }]);
+        } catch (err: any) { 
+            triggerToast(err.response?.data?.detail || "Error saving problem", "error"); 
+        }
+    };
+
+    // Helper to update specific test case
+    const updateTestCase = (index: number, field: string, value: any) => {
+        const newTests = [...cTests];
+        // @ts-ignore
+        newTests[index][field] = value;
+        setCTests(newTests);
+    };
 
     return (
         <div style={{ padding: "40px", maxWidth: "1200px", margin: "0 auto", minHeight: "100vh", background: "#f1f5f9" }}>
+            {/* HEADER */}
             <div style={{display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "30px"}}>
                 <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
                    <button onClick={() => navigate("/dashboard/courses")} style={{ background: "#E2E8F0", border: "none", padding: "10px", borderRadius: "50%", cursor: "pointer" }}><ArrowLeft size={20} color={brand.textMain} /></button>
@@ -338,7 +363,7 @@ const CourseBuilder = () => {
                     <div style={{display:"flex", gap:"10px", marginBottom: "15px"}}>
                         <input value={cTitle} onChange={e => setCTitle(e.target.value)} placeholder="Problem Title (e.g. Fibonacci)" style={{...inputStyle, flex:1}} />
                         <button onClick={handleAutoFill} disabled={loadingAI} style={{padding:"0 20px", background: loadingAI ? "#cbd5e1" : "#7c3aed", color:"white", border:"none", borderRadius:"8px", fontWeight:"700", cursor: loadingAI ? "wait" : "pointer", transition: "all 0.2s"}}>
-                            {loadingAI ? "Generating..." : "✨ AI Auto Fill"}
+                            {loadingAI ? "..." : "✨ AI Auto Fill"}
                         </button>
                     </div>
                     <textarea rows={5} value={cDesc} onChange={e => setCDesc(e.target.value)} placeholder="Problem Description..." style={{...inputStyle, marginBottom:"20px", resize: "vertical"}} />
@@ -348,10 +373,10 @@ const CourseBuilder = () => {
                         <label style={labelStyle}>Test Cases</label>
                         {cTests.map((tc, i) => (
                             <div key={i} style={{display:"flex", gap:"10px", marginBottom:"10px", alignItems: "center"}}>
-                                <input placeholder="Input" value={tc.input} onChange={e => {const n=[...cTests]; n[i].input=e.target.value; setCTests(n)}} style={{...inputStyle, flex: 1}}/>
-                                <input placeholder="Output" value={tc.output} onChange={e => {const n=[...cTests]; n[i].output=e.target.value; setCTests(n)}} style={{...inputStyle, flex: 1}}/>
+                                <input placeholder="Input" value={tc.input} onChange={e => updateTestCase(i, "input", e.target.value)} style={{...inputStyle, flex: 1}}/>
+                                <input placeholder="Output" value={tc.output} onChange={e => updateTestCase(i, "output", e.target.value)} style={{...inputStyle, flex: 1}}/>
                                 <label style={{fontSize:"12px", display:"flex", alignItems:"center", gap:"5px", cursor: "pointer", fontWeight: "600", color: brand.textLight}}>
-                                    <input type="checkbox" checked={tc.hidden} onChange={e => {const n=[...cTests]; n[i].hidden=e.target.checked; setCTests(n)}} /> Hidden
+                                    <input type="checkbox" checked={tc.hidden} onChange={e => updateTestCase(i, "hidden", e.target.checked)} /> Hidden
                                 </label>
                                 {cTests.length > 1 && <X size={16} color="#ef4444" cursor="pointer" onClick={() => { const n = cTests.filter((_, idx) => idx !== i); setCTests(n); }} />}
                             </div>
@@ -364,18 +389,13 @@ const CourseBuilder = () => {
 
                 {/* RIGHT: LIST */}
                 <div style={{ background: "#f8fafc", padding: "20px", borderRadius: "16px", border: "1px solid #cbd5e1", height: "fit-content" }}>
-                    <h3 style={{fontSize:"16px", fontWeight:"800", marginBottom:"15px", color: brand.textMain}}>Problems in {activeTab} ({challenges.filter(c => c.difficulty === activeTab).length}/20)</h3>
+                    <h3 style={{fontSize:"16px", fontWeight:"800", marginBottom:"15px", color: brand.textMain}}>Problems in {activeTab}</h3>
                     <div style={{ maxHeight: "400px", overflowY: "auto" }}>
-                        {challenges.filter(c => c.difficulty === activeTab).length === 0 ? (
-                            <div style={{textAlign: "center", padding: "20px", color: "#94a3b8", fontSize: "13px"}}>No problems added yet.</div>
-                        ) : (
-                            challenges.filter(c => c.difficulty === activeTab).map(c => (
-                                <div key={c.id} style={{padding:"14px", background:"white", borderRadius:"10px", border:"1px solid #cbd5e1", marginBottom:"10px", fontSize:"14px", fontWeight:"600", color: brand.textMain, display: "flex", alignItems: "center", gap: "10px"}}>
-                                    <Code size={16} color={brand.blue} />
-                                    {c.title}
-                                </div>
-                            ))
-                        )}
+                        {challenges.filter(c => c.difficulty === activeTab).map(c => (
+                            <div key={c.id} style={{padding:"14px", background:"white", borderRadius:"10px", border:"1px solid #cbd5e1", marginBottom:"10px", fontSize:"14px", fontWeight:"600", color: brand.textMain, display: "flex", alignItems: "center", gap: "10px"}}>
+                                <Code size={16} color={brand.blue} /> {c.title}
+                            </div>
+                        ))}
                     </div>
                     <button onClick={handlePublish} disabled={isPublishing} style={{marginTop:"30px", width:"100%", padding:"14px", background:brand.green, color:"white", borderRadius:"10px", border:"none", fontWeight:"800", cursor:"pointer", boxShadow: "0 4px 12px rgba(135, 194, 50, 0.25)"}}>
                         {isPublishing ? "Publishing..." : "Publish Course"}

@@ -9,7 +9,7 @@ import {
   PlayCircle, FileText, ChevronLeft, Menu, Code, HelpCircle, 
   UploadCloud, Play, Save, Monitor, Cpu, ChevronDown, ChevronRight, CreditCard,
   File as FileIcon, X, CheckCircle, Radio, Lock, ArrowLeft, AlertCircle, Clock, 
-  Zap, Check, CheckSquare, Square, CheckCheck, Award, Edit // <--- Added 'Check' icon here
+  Zap, CheckSquare, Square, CheckCheck, Award, Edit, AlertTriangle // <--- Added 'Check' icon here
 } from "lucide-react";
 
 
@@ -236,12 +236,16 @@ const CodingPlayer = ({ course, token }: { course: any, token: string }) => {
     const navigate = useNavigate();
     const [challenges, setChallenges] = useState<any[]>([]);
     const [activeTab, setActiveTab] = useState("Easy");
+    
+    // Selected Problem State
     const [selectedProblem, setSelectedProblem] = useState<any>(null);
     const [code, setCode] = useState("# Implement function 'solve(input)'\n\ndef solve(x):\n    return x\n");
+    
+    // Execution State
     const [output, setOutput] = useState("Ready to execute...");
     const [loading, setLoading] = useState(false);
     
-    // Stats for the "LeetCode" Status Box
+    // ✅ Logic: Stats Object for the "LeetCode Status Box"
     const [stats, setStats] = useState<{runtime: string, passed: number, total: number, results: any[]} | null>(null);
 
     const [toast, setToast] = useState({ show: false, message: "", type: "success" });
@@ -283,7 +287,8 @@ const CodingPlayer = ({ course, token }: { course: any, token: string }) => {
             const langMap: any = { "python": 71, "java": 62, "cpp": 54, "javascript": 63 };
             const langId = langMap[course.language] || 71;
 
-            // 1. ✅ SAFE PARSING: Handle both String and Object formats from DB
+            // 1. ✅ Logic: Parse Test Cases safely
+            // We ensure we are sending an ARRAY of objects to the backend
             let cases = [];
             try {
                 if (typeof selectedProblem.test_cases === 'string') {
@@ -297,7 +302,7 @@ const CodingPlayer = ({ course, token }: { course: any, token: string }) => {
                 return;
             }
             
-            // 2. Send to Backend
+            // 2. ✅ Logic: Send BATCH execution request
             const res = await axios.post(`${API_BASE_URL}/execute`, {
                 source_code: code, 
                 language_id: langId, 
@@ -306,10 +311,10 @@ const CodingPlayer = ({ course, token }: { course: any, token: string }) => {
 
             setOutput("Running tests on server...");
             
-            // 3. Poll for Result
+            // 3. ✅ Logic: Poll for the JSON result
             const result = await pollResult(res.data.task_id);
 
-            // 4. Process Result
+            // 4. ✅ Logic: Handle the Worker Response
             if (result.status === "success" && result.data) {
                 const report = result.data;
                 
@@ -320,7 +325,7 @@ const CodingPlayer = ({ course, token }: { course: any, token: string }) => {
                     return;
                 }
 
-                // B. Save Stats for UI
+                // B. Save Stats for the LeetCode Box UI
                 setStats({ 
                     runtime: `${report.stats?.runtime_ms || 0} ms`, 
                     passed: report.stats?.passed || 0,
@@ -328,7 +333,7 @@ const CodingPlayer = ({ course, token }: { course: any, token: string }) => {
                     results: report.results || []
                 });
 
-                // C. Handle Success or Failure
+                // C. Handle Success or Failure logic
                 if (report.stats?.passed === report.stats?.total) {
                     setOutput("🎉 SUCCESS! All Test Cases Passed.");
                     triggerToast("Problem Solved!", "success");
@@ -343,10 +348,10 @@ const CodingPlayer = ({ course, token }: { course: any, token: string }) => {
                     setChallenges(updatedChallenges);
 
                 } else {
-                    // Find the first failed case to display in terminal
+                    // Find the first failed case to display in terminal text area
                     const fail = report.results.find((r: any) => r.status !== "Passed");
                     if (fail) {
-                        setOutput(`❌ TEST FAILED (Case ${fail.id})\n\nInput: ${fail.input}\nExpected: ${fail.expected}\nActual: ${fail.actual}`);
+                        setOutput(`❌ TEST FAILED (Case ${fail.id + 1})\n\nInput: ${fail.input}\nExpected: ${fail.expected}\nActual: ${fail.actual}`);
                     }
                 }
             } else {
@@ -382,16 +387,17 @@ const CodingPlayer = ({ course, token }: { course: any, token: string }) => {
                             {selectedProblem.description}
                         </div>
 
-                        {/* ✅ LEETCODE STYLE RESULT BOX */}
+                        {/* ✅ Logic: The LeetCode Style Result Box (FIXED ALERT TRIANGLE) */}
                         {stats && (
                             <div className={`p-4 rounded-xl mb-6 border ${stats.passed === stats.total ? "bg-green-50 border-green-200 text-green-800" : "bg-red-50 border-red-200 text-red-800"}`}>
                                 <div className="flex justify-between items-center mb-2">
                                     <h3 className="font-bold text-lg flex items-center gap-2">
-                                        {stats.passed === stats.total ? <Check size={20} /> : <AlertCircle size={20} />}
+                                        {stats.passed === stats.total ? <CheckCircle size={20} /> : <AlertTriangle size={20} />}
                                         {stats.passed === stats.total ? "Accepted" : "Wrong Answer"}
                                     </h3>
                                     <span className="text-xs font-mono bg-white/50 px-2 py-1 rounded border border-black/5">Time: {stats.runtime}</span>
                                 </div>
+                                {/* Progress Bar */}
                                 <div className="w-full bg-gray-200 rounded-full h-2.5 mb-2">
                                     <div className={`h-2.5 rounded-full ${stats.passed === stats.total ? "bg-green-500" : "bg-red-500"}`} style={{ width: `${(stats.passed / stats.total) * 100}%` }}></div>
                                 </div>
@@ -441,7 +447,7 @@ const CodingPlayer = ({ course, token }: { course: any, token: string }) => {
                          </div>
                          <div className="p-4 bg-slate-800 flex justify-end gap-4">
                              <button onClick={runAndSubmit} disabled={loading} className="px-8 py-3 rounded-xl bg-[#005EB8] hover:bg-[#004a94] text-white font-bold shadow-lg shadow-blue-200 flex items-center gap-2 disabled:opacity-70 transition-all">
-                                 {loading ? <Cpu size={18} className="animate-spin"/> : <Play size={18} />} {loading ? "Running..." : "Run Code"}
+                                 {loading ? <div className="animate-spin h-4 w-4 border-2 border-white rounded-full border-t-transparent"></div> : <Play size={18} />} {loading ? "Running..." : "Run Code"}
                              </button>
                          </div>
                      </div>
@@ -450,12 +456,10 @@ const CodingPlayer = ({ course, token }: { course: any, token: string }) => {
         )
     }
 
-    // 2. RENDER LIST VIEW (Unchanged - Keeping your existing list view)
+    // 2. RENDER LIST VIEW (Existing List View Logic)
     return (
         <div className="min-h-screen bg-slate-50 font-sans p-10">
-            {/* ... (Keep your existing List View logic here from the prompt) ... */}
-            {/* Copy the List View return block from your previous code here */}
-            {/* Or I can provide it if needed, but it looked correct in your file */}
+             <ToastNotification toast={toast} setToast={setToast} /> 
              <div className="max-w-6xl mx-auto">
                 <div className="flex justify-between items-center mb-10">
                       <div className="flex items-center gap-4">
@@ -512,7 +516,7 @@ const CodingPlayer = ({ course, token }: { course: any, token: string }) => {
             </div>
         </div>
     )
-}
+};
 // --- ⏳ DELAYED PLAYER COMPONENT (Fixes the crash) ---
 const DelayedVideoPlayer = ({ lesson, plyrOptions }: { lesson: any, plyrOptions: any }) => {
     const [isReady, setIsReady] = useState(false);

@@ -7,7 +7,6 @@ import time
 from celery_config import celery_app
 from dotenv import load_dotenv
 import backup_manager
-
 load_dotenv()
 
 # ✅ LOAD CONFIGURATION
@@ -16,7 +15,7 @@ API_HOST = os.getenv("JUDGE0_API_HOST", "judge0-ce.p.rapidapi.com")
 
 def encode_b64(text):
     if not text: return ""
-    return base64.b64encode(str(text).encode('utf-8')).decode('utf-8')
+    return base64.b64encode(text.encode('utf-8')).decode('utf-8')
 
 def decode_b64(text):
     if not text: return ""
@@ -40,7 +39,6 @@ def execute_judge0(source_code, language_id, stdin):
     
     headers = {
         "content-type": "application/json",
-        "Content-Type": "application/json",
         "X-RapidAPI-Key": API_KEY,
         "X-RapidAPI-Host": API_HOST
     }
@@ -52,49 +50,28 @@ def execute_judge0(source_code, language_id, stdin):
         return {"error": str(e)}
 
 @celery_app.task(name="worker.run_code_task", bind=True)
-def run_code_task(self, source_code, language_id, input_data, mode="single"):
+def run_code_task(self, source_code, language_id, test_cases_json):
     
     if not API_KEY:
         return {"status": "error", "output": "Server Config Error: JUDGE0_API_KEY is missing."}
 
-    # =========================================================
-    # 🟢 CASE 1: SINGLE EXECUTION (Code Arena / Standard Lessons)
-    # =========================================================
-    if mode == "single":
-        data = execute_judge0(source_code, language_id, input_data)
-        
-        status_id = data.get("status", {}).get("id", 0)
-        output = ""
+    # Parse Test Cases
+    try:
+        if isinstance(test_cases_json, str):
+            test_cases = json.loads(test_cases_json)
+        else:
+            test_cases = test_cases_json
+    except:
+        return {"status": "error", "output": "Invalid Test Cases Format"}
 
-        if status_id == 3: # Accepted
-            output = decode_b64(data.get("stdout"))
-        elif status_id == 6: # Compilation Error
-            output = "❌ Compilation Error:\n" + decode_b64(data.get("compile_output"))
-        else: # Runtime Error
-            output = decode_b64(data.get("stderr")) or decode_b64(data.get("message"))
-            
-        return {
-            "status": "success" if status_id == 3 else "completed_with_error", 
-            "output": output if output else "Execution finished with no output."
-        }
-
-    # =========================================================
-    # 🔵 CASE 2: BATCH EXECUTION (Coding Course / LeetCode)
-    # =========================================================
-    elif mode == "batch":
-        test_cases = []
-        try:
-            if isinstance(input_data, str):
-                test_cases = json.loads(input_data)
-            else:
-                test_cases = input_data
-        except:
-            return {"status": "error", "output": "Invalid Test Cases JSON Format"}
-
-        # --- STRATEGY A: PYTHON (Driver Injection) ---
-        if language_id == 71: 
-            # We explicitly handle boolean conversion in the driver to avoid "name 'false' is not defined"
-            driver_template = f"""
+    results = []
+    total_start = time.time()
+    
+    # ---------------------------------------------------------
+    # STRATEGY 1: PYTHON (Inject Driver Code - Fastest)
+    # ---------------------------------------------------------
+    if language_id == 71: 
+        driver_template = f"""
 import sys
 import json
 import time
@@ -105,7 +82,6 @@ import inspect
 # --- USER CODE END ---
 
 def get_user_function():
-    # Find the last defined function in the user's code
     all_funcs = [
         obj for name, obj in globals().items() 
         if inspect.isfunction(obj) 
@@ -115,66 +91,47 @@ def get_user_function():
     if all_funcs: return all_funcs[-1]
     return None
 
-def normalize_val(val):
-    # Helper to normalize Booleans and Strings for comparison
-    if isinstance(val, str):
-        if val.lower() == 'true': return True
-        if val.lower() == 'false': return False
-        return val.strip()
-    return val
-
 def run_tests():
-    # Load cases safely
-    raw_cases = {json.dumps(test_cases)}
+    # We use explicit repr() or just the variable to ensure Python boolean syntax (True/False)
+    test_cases = {test_cases} 
     results = []
     
     user_func = get_user_function()
     
     if not user_func:
         print("---JSON_START---")
-        print(json.dumps({{"stats": {{"total": 0, "passed": 0}}, "error": "No function found. Please define a function."}}))
+        print(json.dumps({{"stats": {{"total": 0, "passed": 0}}, "error": "No function found."}}))
         print("---JSON_END---")
         return
 
     start_total = time.time()
     
-    for i, case in enumerate(raw_cases):
+    for i, case in enumerate(test_cases):
         inp = case.get("input")
-        expected_raw = case.get("output")
+        expected = case.get("output")
         
         try:
-            # 1. Type Conversion for Input
-            arg = inp
-            if isinstance(inp, str):
-                if inp.isdigit(): arg = int(inp)
-                elif inp.replace('.', '', 1).isdigit(): arg = float(inp)
-                elif inp.lower() == 'true': arg = True
-                elif inp.lower() == 'false': arg = False
+            # Type Conversion Attempt
+            if isinstance(inp, str) and inp.isdigit(): inp = int(inp)
             
-            # 2. Execute User Function
-            actual_raw = user_func(arg)
-            
-            # 3. Normalize for Comparison (Handle True vs "True")
-            actual_norm = normalize_val(actual_raw)
-            expected_norm = normalize_val(expected_raw)
-            
-            passed = str(actual_norm) == str(expected_norm)
+            actual = user_func(inp)
+            passed = str(actual).strip() == str(expected).strip()
             
             results.append({{
                 "id": i,
                 "status": "Passed" if passed else "Failed",
                 "input": str(inp),
-                "expected": str(expected_raw),
-                "actual": str(actual_raw)
+                "expected": str(expected),
+                "actual": str(actual)
             }})
         except Exception as e:
-            results.append({{"id": i, "status": "Runtime Error", "error": str(e), "input": str(inp), "expected": str(expected_raw), "actual": "Error"}})
+            results.append({{"id": i, "status": "Runtime Error", "error": str(e), "input": str(inp)}})
             
     end_total = time.time()
     
     report = {{
         "stats": {{
-            "total": len(raw_cases),
+            "total": len(test_cases),
             "passed": len([r for r in results if r["status"] == "Passed"]),
             "runtime_ms": round((end_total - start_total) * 1000, 2)
         }},
@@ -187,91 +144,90 @@ def run_tests():
 
 if __name__ == "__main__":
     try: run_tests()
-    except Exception as e: 
-        # Fallback error reporting
-        print("---JSON_START---")
-        print(json.dumps({{"error": f"Driver Error: {{str(e)}}", "stats": {{}}, "results": []}}))
-        print("---JSON_END---")
+    except Exception as e: print(f"Driver Error: {{e}}")
 """
-            # Run the Python Driver
-            data = execute_judge0(driver_template, language_id, "")
+        # Run Python Driver
+        data = execute_judge0(driver_template, language_id, "")
+        
+        # Parse Python Result
+        status_id = data.get("status", {}).get("id", 0)
+        if status_id == 3:
+            raw_output = decode_b64(data.get("stdout"))
+            if "---JSON_START---" in raw_output:
+                json_str = raw_output.split("---JSON_START---")[1].split("---JSON_END---")[0]
+                return {"status": "success", "data": json.loads(json_str)}
+            return {"status": "error", "output": raw_output}
+        elif status_id == 6:
+            return {"status": "compilation_error", "output": decode_b64(data.get("compile_output"))}
+        else:
+            return {"status": "runtime_error", "output": decode_b64(data.get("stderr"))}
+
+    # ---------------------------------------------------------
+    # STRATEGY 2: JAVA / C++ (Server-Side Loop - Robust)
+    # ---------------------------------------------------------
+    else: 
+        # For Java/C++, we execute the user code *for each test case* individually.
+        # This supports 'Scanner' and 'cin' style coding perfectly.
+        
+        passed_count = 0
+        
+        for i, case in enumerate(test_cases):
+            inp = case.get("input")
+            expected = str(case.get("output")).strip()
+            
+            # Run on Judge0
+            data = execute_judge0(source_code, language_id, inp)
             
             status_id = data.get("status", {}).get("id", 0)
             
-            if status_id == 3:
-                raw_output = decode_b64(data.get("stdout"))
-                if "---JSON_START---" in raw_output:
-                    try:
-                        # Extract the JSON report from stdout
-                        json_str = raw_output.split("---JSON_START---")[1].split("---JSON_END---")[0]
-                        return {"status": "success", "data": json.loads(json_str)}
-                    except:
-                        return {"status": "error", "output": "Failed to parse test report."}
-                return {"status": "error", "output": raw_output}
-            elif status_id == 6:
-                return {"status": "success", "data": {"error": "Compilation Error:\n" + decode_b64(data.get("compile_output")), "stats": {"passed":0, "total": len(test_cases)}, "results": []}}
-            else:
-                return {"status": "success", "data": {"error": "Runtime Error:\n" + decode_b64(data.get("stderr")), "stats": {"passed":0, "total": len(test_cases)}, "results": []}}
-
-        # --- STRATEGY B: JAVA / C++ / JS (Loop Execution) ---
-        else: 
-            passed_count = 0
-            results = []
+            if status_id == 3: # Accepted
+                actual = decode_b64(data.get("stdout")).strip()
+                passed = actual == expected
+                if passed: passed_count += 1
+                
+                results.append({
+                    "id": i,
+                    "status": "Passed" if passed else "Failed",
+                    "input": inp,
+                    "expected": expected,
+                    "actual": actual
+                })
             
-            for i, case in enumerate(test_cases):
-                inp = case.get("input")
-                expected = str(case.get("output")).strip()
-                
-                # Execute individual test case
-                data = execute_judge0(source_code, language_id, inp)
-                
-                status_id = data.get("status", {}).get("id", 0)
-                
-                if status_id == 3: # Accepted
-                    actual = decode_b64(data.get("stdout")).strip()
-                    passed = actual == expected
-                    if passed: passed_count += 1
-                    
-                    results.append({
-                        "id": i,
-                        "status": "Passed" if passed else "Failed",
-                        "input": inp,
-                        "expected": expected,
-                        "actual": actual
-                    })
-                
-                elif status_id == 6: # Compilation Error
-                    err = decode_b64(data.get("compile_output"))
-                    return {"status": "success", "data": {"error": f"Compilation Error:\n{err}", "stats": {"passed": 0, "total": len(test_cases)}, "results": []}}
-                
-                else: # Runtime Error
-                    err_msg = decode_b64(data.get("stderr")) or data.get("status", {}).get("description")
-                    results.append({
-                        "id": i,
-                        "status": "Runtime Error",
-                        "error": err_msg,
-                        "input": inp,
-                        "expected": expected,
-                        "actual": "Error"
-                    })
+            elif status_id == 6: # Compilation Error (Fail immediately)
+                return {"status": "compilation_error", "output": decode_b64(data.get("compile_output"))}
+            
+            else: # Runtime Error
+                err_msg = decode_b64(data.get("stderr")) or data.get("status", {}).get("description")
+                results.append({
+                    "id": i,
+                    "status": "Runtime Error",
+                    "error": err_msg,
+                    "input": inp
+                })
 
-            return {
-                "status": "success", 
-                "data": {
-                    "stats": {
-                        "total": len(test_cases),
-                        "passed": passed_count,
-                        "runtime_ms": 0 # Difficult to calc total for individual runs
-                    },
-                    "results": results
-                }
-            }
-
+        total_end = time.time()
+        
+        # Construct JSON Report manually
+        report = {
+            "stats": {
+                "total": len(test_cases),
+                "passed": passed_count,
+                "runtime_ms": round((total_end - total_start) * 1000, 2)
+            },
+            "results": results
+        }
+        
+        return {"status": "success", "data": report}
+    
+    
 @celery_app.task(name="worker.run_backup_task")
 def run_backup_task():
     print("Executing Daily Backup...")
+    
+    # Run the backup logic
     try:
-        backup_manager.run_backup_routine()
+        # Option 1: Run via command line (safest to ensure independent execution)
+        os.system("python backup_manager.py")
         return "Backup Completed"
     except Exception as e:
-        return f"Backup Failed: {str(e)}"
+        return f"Backup Failed: {str(e)}"    
