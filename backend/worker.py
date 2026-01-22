@@ -68,7 +68,7 @@ def run_code_task(self, source_code, language_id, test_cases_json):
     total_start = time.time()
     
     # ---------------------------------------------------------
-    # STRATEGY 1: PYTHON (Inject Driver Code - Fastest)
+    # STRATEGY 1: PYTHON (Smart Driver Injection)
     # ---------------------------------------------------------
     if language_id == 71: 
         driver_template = f"""
@@ -76,6 +76,7 @@ import sys
 import json
 import time
 import inspect
+import io
 
 # --- USER CODE START ---
 {source_code}
@@ -92,7 +93,6 @@ def get_user_function():
     return None
 
 def run_tests():
-    # We use explicit repr() or just the variable to ensure Python boolean syntax (True/False)
     test_cases = {test_cases} 
     results = []
     
@@ -108,23 +108,52 @@ def run_tests():
     
     for i, case in enumerate(test_cases):
         inp = case.get("input")
-        expected = case.get("output")
+        expected = str(case.get("output")).strip()
+        
+        # 1. SETUP PRINT CAPTURE
+        capture = io.StringIO()
+        original_stdout = sys.stdout
+        sys.stdout = capture
         
         try:
-            # Type Conversion Attempt
-            if isinstance(inp, str) and inp.isdigit(): inp = int(inp)
+            # 2. SMART ARGUMENT UNPACKING
+            actual = None
             
-            actual = user_func(inp)
-            passed = str(actual).strip() == str(expected).strip()
+            # If input is a list [1, 2], try unpacking to func(1, 2)
+            if isinstance(inp, list):
+                try:
+                    actual = user_func(*inp)
+                except TypeError:
+                    # If function expects a single list argument, pass as is
+                    actual = user_func(inp)
+            else:
+                # Single value input
+                actual = user_func(inp)
+            
+            # 3. HANDLE PRINT vs RETURN
+            # Restore stdout to read what was printed
+            sys.stdout = original_stdout
+            printed_output = capture.getvalue().strip()
+            
+            # If function returned None but printed something, use the print output
+            if actual is None and printed_output:
+                actual = printed_output
+            
+            # Convert to string for comparison
+            actual_str = str(actual).strip()
+            
+            passed = actual_str == expected
             
             results.append({{
                 "id": i,
                 "status": "Passed" if passed else "Failed",
                 "input": str(inp),
-                "expected": str(expected),
-                "actual": str(actual)
+                "expected": expected,
+                "actual": actual_str
             }})
+            
         except Exception as e:
+            sys.stdout = original_stdout # Ensure stdout is reset on error
             results.append({{"id": i, "status": "Runtime Error", "error": str(e), "input": str(inp)}})
             
     end_total = time.time()
@@ -163,20 +192,22 @@ if __name__ == "__main__":
             return {"status": "runtime_error", "output": decode_b64(data.get("stderr"))}
 
     # ---------------------------------------------------------
-    # STRATEGY 2: JAVA / C++ (Server-Side Loop - Robust)
+    # STRATEGY 2: JAVA / C++ (Standard IO Loop)
     # ---------------------------------------------------------
     else: 
-        # For Java/C++, we execute the user code *for each test case* individually.
-        # This supports 'Scanner' and 'cin' style coding perfectly.
-        
         passed_count = 0
-        
         for i, case in enumerate(test_cases):
             inp = case.get("input")
             expected = str(case.get("output")).strip()
             
-            # Run on Judge0
-            data = execute_judge0(source_code, language_id, inp)
+            # For Java/C++, input MUST be string. 
+            # If it's a list like [1, 2], convert to space-separated string "1 2"
+            if isinstance(inp, list):
+                stdin_input = " ".join(map(str, inp))
+            else:
+                stdin_input = str(inp)
+
+            data = execute_judge0(source_code, language_id, stdin_input)
             
             status_id = data.get("status", {}).get("id", 0)
             
@@ -184,30 +215,16 @@ if __name__ == "__main__":
                 actual = decode_b64(data.get("stdout")).strip()
                 passed = actual == expected
                 if passed: passed_count += 1
-                
-                results.append({
-                    "id": i,
-                    "status": "Passed" if passed else "Failed",
-                    "input": inp,
-                    "expected": expected,
-                    "actual": actual
-                })
+                results.append({ "id": i, "status": "Passed" if passed else "Failed", "input": stdin_input, "expected": expected, "actual": actual })
             
-            elif status_id == 6: # Compilation Error (Fail immediately)
+            elif status_id == 6: 
                 return {"status": "compilation_error", "output": decode_b64(data.get("compile_output"))}
             
-            else: # Runtime Error
+            else: 
                 err_msg = decode_b64(data.get("stderr")) or data.get("status", {}).get("description")
-                results.append({
-                    "id": i,
-                    "status": "Runtime Error",
-                    "error": err_msg,
-                    "input": inp
-                })
+                results.append({ "id": i, "status": "Runtime Error", "error": err_msg, "input": stdin_input })
 
         total_end = time.time()
-        
-        # Construct JSON Report manually
         report = {
             "stats": {
                 "total": len(test_cases),
@@ -216,7 +233,6 @@ if __name__ == "__main__":
             },
             "results": results
         }
-        
         return {"status": "success", "data": report}
     
     
