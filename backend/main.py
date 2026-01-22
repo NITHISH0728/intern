@@ -1238,21 +1238,44 @@ async def mark_item_complete(item_id: int, db: AsyncSession = Depends(get_db), c
 # 2. Final Course Completion (The "Complete Course" Button)
 @app.post("/api/v1/courses/{course_id}/claim-certificate")
 async def claim_course_certificate(course_id: int, db: AsyncSession = Depends(get_db), current_user: models.User = Depends(get_current_user)):
-    # 1. Verify strict 100% completion
-    completed, total, is_done = await check_progress_status(current_user.id, course_id, db)
+    # Fetch Course Type
+    course_res = await db.execute(select(models.Course).where(models.Course.id == course_id))
+    course = course_res.scalars().first()
     
-    if not is_done:
-        return {
-            "status": "error", 
-            "message": f"Course incomplete. You have finished {completed}/{total} items. Please complete all modules first."
-        }
+    if not course: raise HTTPException(status_code=404)
 
-    # 2. Generate Certificate
-    await generate_certificate_record(current_user.id, course_id, db)
+    is_eligible = False
+
+    # --- LOGIC FOR CODING COURSE ---
+    if course.course_type == "coding":
+        # 1. Get Total Challenges Count
+        total_res = await db.execute(select(models.CourseChallenge).where(models.CourseChallenge.course_id == course_id))
+        total_challenges = len(total_res.scalars().all())
+
+        # 2. Get User Solved Count (Live Check from challenge_progress)
+        solved_res = await db.execute(
+            text("SELECT COUNT(*) FROM challenge_progress WHERE user_id = :uid AND challenge_id IN (SELECT id FROM course_challenges WHERE course_id = :cid)"), 
+            {"uid": current_user.id, "cid": course_id}
+        )
+        solved_count = solved_res.scalar()
+
+        if total_challenges > 0 and solved_count == total_challenges:
+            is_eligible = True
+        else:
+            return {"status": "error", "message": f"Incomplete: Solved {solved_count}/{total_challenges} problems. Complete all stages first."}
+
+    # --- LOGIC FOR STANDARD COURSE ---
+    else:
+        completed, total, is_done = await check_progress_status(current_user.id, course_id, db)
+        if is_done: is_eligible = True
+        else: return {"status": "error", "message": f"Incomplete: Finished {completed}/{total} lessons."}
+
+    # --- GENERATE CERTIFICATE ---
+    if is_eligible:
+        await generate_certificate_record(current_user.id, course_id, db)
+        return {"status": "success", "message": "Certificate Generated!", "certificate_ready": True}
     
-    return {"status": "success", "message": "Certificate Generated!", "certificate_ready": True}
-    
-   
+    return {"status": "error", "message": "Requirements not met."}
 
 # 2. STATUS CHECK ENDPOINT
 @app.get("/api/v1/result/{task_id}")
@@ -1267,43 +1290,60 @@ async def get_result(task_id: str):
         return {"status": "failed", "error": str(task_result.result)}
  
 @app.get("/api/v1/courses/{course_id}/challenges")
-async def get_course_challenges(course_id: int, db: AsyncSession = Depends(get_db)):
-    # 1. define Key
+async def get_course_challenges(course_id: int, db: AsyncSession = Depends(get_db), current_user: models.User = Depends(get_current_user)):
+    # --- STEP 1: Get Base Challenges (Try Cache First) ---
     cache_key = f"course_{course_id}_challenges"
-
-    # 2. Check Redis (Fast Path)
+    challenges_data = []
+    
     try:
         cached_data = await redis_client.get(cache_key)
         if cached_data:
-            print("⚡ Serving Challenges from Redis Cache")
-            return json.loads(cached_data)
+            print("⚡ Serving Challenges Content from Redis Cache")
+            challenges_data = json.loads(cached_data)
     except Exception as e:
         print(f"Redis Error (Ignored): {e}")
 
-    # 3. DB Query (Slow Path)
-    result = await db.execute(select(models.CourseChallenge).where(models.CourseChallenge.course_id == course_id))
-    challenges = result.scalars().all()
-    
-    # 4. Serialize Data (Convert SQLAlchemy Objects to Dicts for JSON)
-    challenges_data = []
-    for c in challenges:
-        challenges_data.append({
-            "id": c.id,
-            "title": c.title,
-            "description": c.description,
-            "difficulty": c.difficulty,
-            "test_cases": c.test_cases, # Assuming this is JSON string or Dict
-            "course_id": c.course_id
-        })
+    # If not in cache, fetch from DB and Cache it
+    if not challenges_data:
+        print("🐢 Serving Challenges from Database (Cache Miss)")
+        result = await db.execute(select(models.CourseChallenge).where(models.CourseChallenge.course_id == course_id))
+        challenges = result.scalars().all()
+        
+        # Serialize
+        for c in challenges:
+            challenges_data.append({
+                "id": c.id,
+                "title": c.title,
+                "description": c.description,
+                "difficulty": c.difficulty,
+                "test_cases": c.test_cases,
+                "course_id": c.course_id
+            })
+            
+        # Save to Redis (Expire in 1 hour)
+        try:
+            await redis_client.setex(cache_key, 3600, json.dumps(challenges_data))
+        except Exception as e:
+            print(f"Failed to cache data: {e}")
 
-    # 5. Save to Redis (Expire in 1 hour)
+    # --- STEP 2: Fetch User Progress (Always Live) ---
+    # We query the 'challenge_progress' table directly
     try:
-        await redis_client.setex(cache_key, 3600, json.dumps(challenges_data))
+        solved_res = await db.execute(text("SELECT challenge_id FROM challenge_progress WHERE user_id = :uid"), {"uid": current_user.id})
+        solved_ids = {row[0] for row in solved_res.fetchall()} # Use Set for fast lookup
     except Exception as e:
-        print(f"Failed to cache data: {e}")
+        print(f"Error fetching progress: {e}")
+        solved_ids = set()
 
-    print("🐢 Serving Challenges from Database")
-    return challenges_data
+    # --- STEP 3: Merge Content + Progress ---
+    final_response = []
+    for challenge in challenges_data:
+        # Create a copy so we don't modify the cached object
+        c_copy = challenge.copy()
+        c_copy["is_solved"] = c_copy["id"] in solved_ids # ✅ TRUE if student solved it
+        final_response.append(c_copy)
+
+    return final_response
 
 # 3️⃣ ADD CREATE CHALLENGE
 @app.post("/api/v1/courses/{course_id}/challenges")
@@ -1517,21 +1557,30 @@ async def manual_backup(db: AsyncSession = Depends(get_db), current_user: models
 
 @app.post("/api/v1/challenges/{challenge_id}/solve")
 async def mark_challenge_solved(challenge_id: int, db: AsyncSession = Depends(get_db), current_user: models.User = Depends(require_student)):
-    # 1. Check if the challenge exists
+    # 1. Check if challenge exists
     res = await db.execute(select(models.CourseChallenge).where(models.CourseChallenge.id == challenge_id))
     challenge = res.scalars().first()
-    
     if not challenge:
         raise HTTPException(status_code=404, detail="Challenge not found")
 
-    # 2. Check if already solved (optional, but good practice)
-    # Ideally, you'd have a table 'StudentChallengeProgress' linking user_id + challenge_id + is_solved.
-    # Since you might not have that specific table set up yet based on your provided code, 
-    # we will return a success message so the frontend stops erroring.
-    
-    # If you DO have a tracking table, insert the record here.
-    # For now, to fix the 404 crash:
-    
+    # 2. Insert into Progress Table (Idempotent)
+    try:
+        # We use ON CONFLICT DO NOTHING to avoid errors if they solve it twice
+        # Note: Ensure your DB has a UNIQUE constraint on (user_id, challenge_id)
+        # If not, use a SELECT check first.
+        
+        # Safe check logic just in case unique constraint isn't set:
+        check_res = await db.execute(text("SELECT 1 FROM challenge_progress WHERE user_id=:uid AND challenge_id=:cid"), {"uid": current_user.id, "cid": challenge_id})
+        if not check_res.first():
+            await db.execute(
+                text("INSERT INTO challenge_progress (user_id, challenge_id, is_solved, solved_at) VALUES (:uid, :cid, :solved, :time)"),
+                {"uid": current_user.id, "cid": challenge_id, "solved": True, "time": datetime.utcnow()}
+            )
+            await db.commit()
+    except Exception as e:
+        print(f"Error saving progress: {e}")
+        pass
+
     return {"status": "success", "message": "Challenge marked as solved"}
     
 @app.get("/")

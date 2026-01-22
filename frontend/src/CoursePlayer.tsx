@@ -230,22 +230,18 @@ const CodeCompiler = ({ lesson }: { lesson: any }) => {
   );
 };
 
-// --- 🆕 COMPONENT: CODING COURSE PLAYER (LeetCode Style) ---
+// --- 🆕 COMPONENT: CODING COURSE PLAYER (Updated Logic) ---
 const CodingPlayer = ({ course, token }: { course: any, token: string }) => {
     const { courseId } = useParams();
     const navigate = useNavigate();
     const [challenges, setChallenges] = useState<any[]>([]);
     const [activeTab, setActiveTab] = useState("Easy");
     
-    // Selected Problem State
+    // Problem & Execution State
     const [selectedProblem, setSelectedProblem] = useState<any>(null);
     const [code, setCode] = useState("# Implement function 'solve(input)'\n\ndef solve(x):\n    return x\n");
-    
-    // Execution State
     const [output, setOutput] = useState("Ready to execute...");
     const [loading, setLoading] = useState(false);
-    
-    // ✅ Logic: Stats Object for the "LeetCode Status Box"
     const [stats, setStats] = useState<{runtime: string, passed: number, total: number, results: any[]} | null>(null);
 
     const [toast, setToast] = useState({ show: false, message: "", type: "success" });
@@ -263,117 +259,98 @@ const CodingPlayer = ({ course, token }: { course: any, token: string }) => {
         } catch(err) { console.error("Failed to load challenges", err); }
     };
 
+    // --- 🟢 STAGE COMPLETION LOGIC ---
+    // Helper to check if a specific level is 100% complete
+    const isStageComplete = (level: string) => {
+        const stageprobs = challenges.filter(c => c.difficulty === level);
+        if (stageprobs.length === 0) return false; // Empty stage is not "complete"
+        return stageprobs.every(c => c.is_solved);
+    };
+
+    // Logic for Easy, Medium, Hard Status
+    const easyComplete = isStageComplete("Easy");
+    const mediumComplete = isStageComplete("Medium");
+    const hardComplete = isStageComplete("Hard");
+    const courseFullyComplete = easyComplete && mediumComplete && hardComplete;
+
+    // --- 🔒 LOCKING LOGIC ---
+    // Medium locked until Easy is done. Hard locked until Medium is done.
     const isTabLocked = (tab: string) => {
-        if (tab === "Easy") return false;
-        const easySolved = challenges.filter(c => c.difficulty === "Easy" && c.is_solved).length;
-        const easyTotal = challenges.filter(c => c.difficulty === "Easy").length;
-        
-        if (tab === "Medium") return easyTotal > 0 && easySolved < easyTotal; 
-        if (tab === "Hard") {
-             const medSolved = challenges.filter(c => c.difficulty === "Medium" && c.is_solved).length;
-             const medTotal = challenges.filter(c => c.difficulty === "Medium").length;
-             const mediumLocked = easyTotal > 0 && easySolved < easyTotal;
-             return mediumLocked || (medTotal > 0 && medSolved < medTotal);
-        }
+        if (tab === "Easy") return false; // Easy always open
+        if (tab === "Medium") return !easyComplete;
+        if (tab === "Hard") return !mediumComplete;
         return true;
+    };
+
+    const handleClaimCertificate = async () => {
+        try {
+            const res = await axios.post(`${API_BASE_URL}/courses/${courseId}/claim-certificate`, {}, { headers: { Authorization: `Bearer ${token}` } });
+            if (res.data.status === "success") {
+                triggerToast("🎉 Certificate Generated!", "success");
+                setTimeout(() => navigate("/student-dashboard"), 2000);
+            } else {
+                triggerToast(res.data.message, "error");
+            }
+        } catch (e) { triggerToast("Failed to claim certificate", "error"); }
     };
 
     const runAndSubmit = async () => {
         setLoading(true);
         setOutput("Initializing Test Environment...");
-        setStats(null); // Clear previous stats
+        setStats(null); 
 
         try {
             const langMap: any = { "python": 71, "java": 62, "cpp": 54, "javascript": 63 };
             const langId = langMap[course.language] || 71;
 
-            // 1. ✅ Logic: Parse Test Cases safely
-            // We ensure we are sending an ARRAY of objects to the backend
             let cases = [];
             try {
-                if (typeof selectedProblem.test_cases === 'string') {
-                    cases = JSON.parse(selectedProblem.test_cases);
-                } else {
-                    cases = selectedProblem.test_cases;
-                }
+                cases = typeof selectedProblem.test_cases === 'string' ? JSON.parse(selectedProblem.test_cases) : selectedProblem.test_cases;
             } catch (e) {
-                setOutput("❌ Error: Test cases in database are corrupted.");
-                setLoading(false);
-                return;
+                setOutput("❌ Error: Invalid Test Case Format.");
+                setLoading(false); return;
             }
             
-            // 2. ✅ Logic: Send BATCH execution request
-            const res = await axios.post(`${API_BASE_URL}/execute`, {
-                source_code: code, 
-                language_id: langId, 
-                test_cases: cases 
-            });
-
+            const res = await axios.post(`${API_BASE_URL}/execute`, { source_code: code, language_id: langId, test_cases: cases });
             setOutput("Running tests on server...");
             
-            // 3. ✅ Logic: Poll for the JSON result
             const result = await pollResult(res.data.task_id);
 
-            // 4. ✅ Logic: Handle the Worker Response
             if (result.status === "success" && result.data) {
                 const report = result.data;
-                
-                // A. Check for Compilation/Syntax Errors
-                if (report.error) {
-                    setOutput(`❌ SYNTAX/RUNTIME ERROR:\n\n${report.error}`);
-                    setLoading(false);
-                    return;
-                }
+                if (report.error) { setOutput(`❌ ERROR:\n\n${report.error}`); setLoading(false); return; }
 
-                // B. Save Stats for the LeetCode Box UI
-                setStats({ 
-                    runtime: `${report.stats?.runtime_ms || 0} ms`, 
-                    passed: report.stats?.passed || 0,
-                    total: report.stats?.total || 0,
-                    results: report.results || []
-                });
+                setStats({ runtime: `${report.stats.runtime_ms} ms`, passed: report.stats.passed, total: report.stats.total, results: report.results || [] });
 
-                // C. Handle Success or Failure logic
-                if (report.stats?.passed === report.stats?.total) {
+                if (report.stats.passed === report.stats.total) {
                     setOutput("🎉 SUCCESS! All Test Cases Passed.");
                     triggerToast("Problem Solved!", "success");
                     
-                    // Mark as Solved in Backend
+                    // 1. Mark Solved in Backend
                     await axios.post(`${API_BASE_URL}/challenges/${selectedProblem.id}/solve`, {}, { headers: { Authorization: `Bearer ${token}` } });
                     
-                    // Update Local UI State
-                    const updatedChallenges = challenges.map(c => 
-                        c.id === selectedProblem.id ? { ...c, is_solved: true } : c
-                    );
-                    setChallenges(updatedChallenges);
+                    // 2. Update Local State (Green Tick appears immediately)
+                    const updated = challenges.map(c => c.id === selectedProblem.id ? { ...c, is_solved: true } : c);
+                    setChallenges(updated);
 
+                    // 3. Re-Check Locked Status (Important!)
+                    // Since state updated, React will re-render and `isTabLocked` logic will run automatically.
                 } else {
-                    // Find the first failed case to display in terminal text area
                     const fail = report.results.find((r: any) => r.status !== "Passed");
-                    if (fail) {
-                        setOutput(`❌ TEST FAILED (Case ${fail.id + 1})\n\nInput: ${fail.input}\nExpected: ${fail.expected}\nActual: ${fail.actual}`);
-                    }
+                    if (fail) setOutput(`❌ TEST FAILED (Case ${fail.id + 1})\n\nInput: ${fail.input}\nExpected: ${fail.expected}\nActual: ${fail.actual}`);
                 }
             } else {
-                // Fallback for hard errors
-                setOutput(result.output || "Execution Error: Unknown response from server.");
+                setOutput(result.output || "Execution Error");
             }
-
-        } catch (err) {
-            console.error(err);
-            setOutput("⚠️ System Error: Could not connect to compiler service.");
-        } finally {
-            setLoading(false);
-        }
+        } catch (err) { setOutput("System Error."); } finally { setLoading(false); }
     };
 
-    // --- RENDER ---
     if (selectedProblem) {
         return (
             <div className="flex h-screen w-screen bg-[#F8FAFC] font-sans p-6 overflow-hidden relative">
                  <ToastNotification toast={toast} setToast={setToast} /> 
                  
-                 {/* LEFT PANEL: Problem Info */}
+                 {/* LEFT PANEL */}
                  <div className="w-[35%] flex flex-col h-full bg-white rounded-2xl shadow-sm border border-slate-200 mr-6 overflow-hidden">
                      <div className="p-5 border-b border-slate-100 flex items-center gap-3">
                         <button onClick={() => { setSelectedProblem(null); setStats(null); setOutput("Ready to execute..."); }} className="p-2 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors text-slate-600">
@@ -383,11 +360,9 @@ const CodingPlayer = ({ course, token }: { course: any, token: string }) => {
                      </div>
                      <div className="p-8 overflow-y-auto flex-1">
                         <h1 className="text-3xl font-extrabold text-slate-900 mb-4">{selectedProblem.title}</h1>
-                        <div className="prose prose-slate text-slate-600 leading-relaxed mb-8 whitespace-pre-wrap">
-                            {selectedProblem.description}
-                        </div>
+                        <div className="prose prose-slate text-slate-600 leading-relaxed mb-8 whitespace-pre-wrap">{selectedProblem.description}</div>
 
-                        {/* ✅ Logic: The LeetCode Style Result Box (FIXED ALERT TRIANGLE) */}
+                        {/* RESULT BOX */}
                         {stats && (
                             <div className={`p-4 rounded-xl mb-6 border ${stats.passed === stats.total ? "bg-green-50 border-green-200 text-green-800" : "bg-red-50 border-red-200 text-red-800"}`}>
                                 <div className="flex justify-between items-center mb-2">
@@ -397,11 +372,7 @@ const CodingPlayer = ({ course, token }: { course: any, token: string }) => {
                                     </h3>
                                     <span className="text-xs font-mono bg-white/50 px-2 py-1 rounded border border-black/5">Time: {stats.runtime}</span>
                                 </div>
-                                {/* Progress Bar */}
-                                <div className="w-full bg-gray-200 rounded-full h-2.5 mb-2">
-                                    <div className={`h-2.5 rounded-full ${stats.passed === stats.total ? "bg-green-500" : "bg-red-500"}`} style={{ width: `${(stats.passed / stats.total) * 100}%` }}></div>
-                                </div>
-                                <p className="text-sm font-bold">{stats.passed} / {stats.total} test cases passed</p>
+                                <p className="text-sm font-bold">{stats.passed} / {stats.total} cases passed</p>
                             </div>
                         )}
 
@@ -420,33 +391,23 @@ const CodingPlayer = ({ course, token }: { course: any, token: string }) => {
                      </div>
                  </div>
 
-                 {/* RIGHT PANEL: Editor & Terminal */}
+                 {/* RIGHT PANEL */}
                  <div className="w-[65%] flex flex-col h-full gap-4">
                      <div className="flex-[2] bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden flex flex-col">
                         <div className="h-12 border-b border-slate-100 flex items-center px-6 bg-white">
                             <div className="flex items-center gap-2 text-[#005EB8] font-bold text-sm"><Code size={16} /> Code Editor</div>
                         </div>
                         <div className="flex-1 p-2">
-                            <Editor 
-                                height="100%" 
-                                defaultLanguage={course.language || "python"} 
-                                theme="light"
-                                value={code} 
-                                onChange={(val) => setCode(val || "")}
-                                options={{ minimap: { enabled: false }, fontSize: 15, padding: { top: 20 }, scrollBeyondLastLine: false }}
-                            />
+                            <Editor height="100%" defaultLanguage={course.language || "python"} theme="light" value={code} onChange={(val) => setCode(val || "")} options={{ minimap: { enabled: false }, fontSize: 15, padding: { top: 20 }, scrollBeyondLastLine: false }} />
                         </div>
                      </div>
-
                      <div className="flex-[1] bg-[#0f172a] rounded-2xl shadow-sm border border-slate-800 overflow-hidden flex flex-col">
                          <div className="h-10 bg-[#1e293b] border-b border-slate-700 flex items-center px-4">
                             <span className="text-slate-400 text-xs font-bold uppercase tracking-wider flex items-center gap-2"><Monitor size={14}/> Output</span>
                          </div>
-                         <div className="flex-1 p-5 font-mono text-sm text-[#4ade80] overflow-auto whitespace-pre-wrap leading-relaxed">
-                            {output}
-                         </div>
+                         <div className="flex-1 p-5 font-mono text-sm text-[#4ade80] overflow-auto whitespace-pre-wrap leading-relaxed">{output}</div>
                          <div className="p-4 bg-slate-800 flex justify-end gap-4">
-                             <button onClick={runAndSubmit} disabled={loading} className="px-8 py-3 rounded-xl bg-[#005EB8] hover:bg-[#004a94] text-white font-bold shadow-lg shadow-blue-200 flex items-center gap-2 disabled:opacity-70 transition-all">
+                             <button onClick={runAndSubmit} disabled={loading} className="px-8 py-3 rounded-xl bg-[#005EB8] hover:bg-[#004a94] text-white font-bold shadow-lg flex items-center gap-2 transition-all">
                                  {loading ? <div className="animate-spin h-4 w-4 border-2 border-white rounded-full border-t-transparent"></div> : <Play size={18} />} {loading ? "Running..." : "Run Code"}
                              </button>
                          </div>
@@ -456,7 +417,6 @@ const CodingPlayer = ({ course, token }: { course: any, token: string }) => {
         )
     }
 
-    // 2. RENDER LIST VIEW (Existing List View Logic)
     return (
         <div className="min-h-screen bg-slate-50 font-sans p-10">
              <ToastNotification toast={toast} setToast={setToast} /> 
@@ -471,18 +431,28 @@ const CodingPlayer = ({ course, token }: { course: any, token: string }) => {
                       </div>
                 </div>
 
+                {/* --- 🟢 STAGE TABS WITH DOUBLE TICK LOGIC --- */}
                 <div className="flex gap-4 mb-8">
-                    {["Easy", "Medium", "Hard"].map(tab => {
-                        const locked = isTabLocked(tab);
+                    {[
+                        { name: "Easy", complete: easyComplete },
+                        { name: "Medium", complete: mediumComplete },
+                        { name: "Hard", complete: hardComplete }
+                    ].map(tab => {
+                        const locked = isTabLocked(tab.name);
                         return (
                             <button 
-                                key={tab} 
+                                key={tab.name} 
                                 disabled={locked} 
-                                onClick={() => setActiveTab(tab)} 
-                                className={`px-6 py-3 rounded-xl font-bold text-sm flex items-center gap-2 transition-all ${activeTab === tab ? "bg-[#005EB8] text-white shadow-lg shadow-blue-200 scale-105" : "bg-white text-slate-500 border border-slate-200 hover:bg-slate-50"}`}
+                                onClick={() => setActiveTab(tab.name)} 
+                                className={`px-6 py-3 rounded-xl font-bold text-sm flex items-center gap-2 transition-all border
+                                    ${activeTab === tab.name ? "bg-[#005EB8] text-white shadow-lg scale-105 border-transparent" : "bg-white text-slate-500 border-slate-200 hover:bg-slate-50"}
+                                    ${tab.complete ? "border-green-500 bg-green-50 text-green-700" : ""}
+                                `}
                                 style={{ opacity: locked ? 0.6 : 1, cursor: locked ? "not-allowed" : "pointer" }}
                             >
-                                {tab} Level {locked && <Lock size={14} />}
+                                {tab.name} Level 
+                                {locked && <Lock size={14} />}
+                                {tab.complete && <CheckCheck size={16} className="text-green-600" />} {/* ✅ Double Tick */}
                             </button>
                         );
                     })}
@@ -513,6 +483,20 @@ const CodingPlayer = ({ course, token }: { course: any, token: string }) => {
                         </div>
                     )}
                 </div>
+
+                {/* --- 🏆 CERTIFICATE BUTTON (Visible only if Course Complete) --- */}
+                {courseFullyComplete && (
+                    <div className="mt-12 p-8 bg-gradient-to-r from-green-500 to-green-600 rounded-2xl text-center shadow-xl text-white animate-fade-in">
+                        <div className="w-16 h-16 bg-white/20 rounded-full flex items-center justify-center mx-auto mb-4">
+                            <Award size={32} className="text-white" />
+                        </div>
+                        <h2 className="text-3xl font-extrabold mb-2">Course Completed!</h2>
+                        <p className="mb-6 opacity-90">You have successfully mastered all levels. Claim your certificate now.</p>
+                        <button onClick={handleClaimCertificate} className="bg-white text-green-700 px-8 py-3 rounded-xl font-bold hover:scale-105 transition-transform shadow-lg">
+                            Claim Certificate
+                        </button>
+                    </div>
+                )}
             </div>
         </div>
     )
