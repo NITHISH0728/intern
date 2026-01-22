@@ -306,12 +306,39 @@ const CourseBuilder = () => {
     };
 
     const saveChallenge = async () => {
-        if(!cTitle || !cDesc) return triggerToast("Title and Description required", "error");
+        if (!cTitle || !cDesc) return triggerToast("Title and Description required", "error");
 
         try {
-            // ✅ Logic: Stringify the array so it stores as a JSON string in DB
-            // This matches exactly what CodeArena does.
-            const testCasesString = JSON.stringify(cTests);
+            // ✅ SMART FORMATTING: Convert Input Strings to JSON Arrays
+            // This ensures the worker receives [10, 20, 30] instead of "10 20 30"
+            const formattedTests = cTests.map(t => {
+                // 👇 FIX: Explicitly type as 'any' to allow numbers/arrays
+                let cleanInput: any = t.input;
+                
+                // Try to parse input as JSON if it looks like an array or number
+                // Example: "10 20" -> [10, 20]
+                // Example: "[1, 2]" -> [1, 2]
+                try {
+                    // Case A: User typed valid JSON like [1, 2]
+                    cleanInput = JSON.parse(t.input);
+                } catch {
+                    // Case B: User typed space-separated values like "10 20 30"
+                    // We split by space and try to convert to numbers
+                    if (t.input.includes(" ") || !isNaN(Number(t.input))) {
+                         const parts = t.input.split(" ").map(p => {
+                             const num = Number(p);
+                             return isNaN(num) ? p : num; // Keep as string if not a number
+                         });
+                         // If it's a single value, just keep the value (e.g. 5)
+                         cleanInput = parts.length === 1 ? parts[0] : parts;
+                    }
+                }
+                
+                return { ...t, input: cleanInput };
+            });
+
+            // Serialize the SMART formatted tests
+            const testCasesString = JSON.stringify(formattedTests);
 
             await axios.post(`${API_BASE_URL}/courses/${courseId}/challenges`, {
                 title: cTitle, 
@@ -328,7 +355,7 @@ const CourseBuilder = () => {
             triggerToast(err.response?.data?.detail || "Error saving problem", "error"); 
         }
     };
-
+    
     // Helper to update specific test case
     const updateTestCase = (index: number, field: string, value: any) => {
         const newTests = [...cTests];
