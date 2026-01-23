@@ -267,16 +267,18 @@ const CourseBuilder = () => {
 
 // Inside CourseBuilder.tsx, find the CodingCourseBuilder component and replace it with this:
 
-  const CodingCourseBuilder = () => {
+const CodingCourseBuilder = () => {
     const [activeTab, setActiveTab] = useState("Easy"); // Easy, Medium, Hard
     const [challenges, setChallenges] = useState<any[]>([]);
     
     // Form State
     const [cTitle, setCTitle] = useState("");
     const [cDesc, setCDesc] = useState("");
-    // ✅ Logic: Default empty test case structure
     const [cTests, setCTests] = useState([{ input: "", output: "", hidden: false }]);
     const [loadingAI, setLoadingAI] = useState(false);
+    
+    // ✅ NEW: Editing State
+    const [editingId, setEditingId] = useState<number | null>(null);
     
     const token = localStorage.getItem("token");
 
@@ -289,13 +291,52 @@ const CourseBuilder = () => {
          } catch(e) { console.error(e); }
     };
 
+    // ✅ NEW: Load Challenge into Form for Editing
+    const handleEditChallenge = (challenge: any) => {
+        setEditingId(challenge.id);
+        setCTitle(challenge.title);
+        setCDesc(challenge.description);
+        setActiveTab(challenge.difficulty); // Switch tab to match challenge
+        
+        try {
+            const parsedTests = typeof challenge.test_cases === 'string' 
+                ? JSON.parse(challenge.test_cases) 
+                : challenge.test_cases;
+            setCTests(parsedTests);
+        } catch (e) {
+            setCTests([{ input: "", output: "", hidden: false }]);
+        }
+    };
+
+    // ✅ NEW: Delete Challenge
+    const handleDeleteChallenge = async (id: number, e: React.MouseEvent) => {
+        e.stopPropagation();
+        if(!window.confirm("Are you sure you want to delete this problem?")) return;
+        
+        try {
+            await axios.delete(`${API_BASE_URL}/challenges/${id}`, { headers: { Authorization: `Bearer ${token}` } });
+            triggerToast("Problem deleted successfully", "success");
+            loadChallenges();
+            // If we were editing this one, clear the form
+            if (editingId === id) resetForm();
+        } catch (err) {
+            triggerToast("Failed to delete problem", "error");
+        }
+    };
+
+    const resetForm = () => {
+        setCTitle(""); 
+        setCDesc(""); 
+        setCTests([{ input: "", output: "", hidden: false }]);
+        setEditingId(null);
+    };
+
     const handleAutoFill = async () => {
         if(!cTitle) return triggerToast("Enter a title first", "error");
         setLoadingAI(true);
         try {
             const res = await axios.post(`${API_BASE_URL}/ai/generate-challenge`, { title: cTitle });
             setCDesc(res.data.description);
-            // ✅ Logic: Ensure AI response is parsed correctly into our array format
             const parsedTests = typeof res.data.test_cases === 'string' ? JSON.parse(res.data.test_cases) : res.data.test_cases;
             setCTests(parsedTests);
             triggerToast("AI Content Generated!", "success");
@@ -309,54 +350,47 @@ const CourseBuilder = () => {
         if (!cTitle || !cDesc) return triggerToast("Title and Description required", "error");
 
         try {
-            // ✅ SMART FORMATTING: Convert Input Strings to JSON Arrays
-            // This ensures the worker receives [10, 20, 30] instead of "10 20 30"
+            // Smart Formatting (Same as before)
             const formattedTests = cTests.map(t => {
-                // 👇 FIX: Explicitly type as 'any' to allow numbers/arrays
                 let cleanInput: any = t.input;
-                
-                // Try to parse input as JSON if it looks like an array or number
-                // Example: "10 20" -> [10, 20]
-                // Example: "[1, 2]" -> [1, 2]
-                try {
-                    // Case A: User typed valid JSON like [1, 2]
-                    cleanInput = JSON.parse(t.input);
-                } catch {
-                    // Case B: User typed space-separated values like "10 20 30"
-                    // We split by space and try to convert to numbers
+                try { cleanInput = JSON.parse(t.input); } 
+                catch { 
                     if (t.input.includes(" ") || !isNaN(Number(t.input))) {
                          const parts = t.input.split(" ").map(p => {
                              const num = Number(p);
-                             return isNaN(num) ? p : num; // Keep as string if not a number
+                             return isNaN(num) ? p : num;
                          });
-                         // If it's a single value, just keep the value (e.g. 5)
                          cleanInput = parts.length === 1 ? parts[0] : parts;
                     }
                 }
-                
                 return { ...t, input: cleanInput };
             });
 
-            // Serialize the SMART formatted tests
             const testCasesString = JSON.stringify(formattedTests);
-
-            await axios.post(`${API_BASE_URL}/courses/${courseId}/challenges`, {
+            const payload = {
                 title: cTitle, 
                 description: cDesc, 
                 difficulty: activeTab, 
                 test_cases: testCasesString 
-            }, { headers: { Authorization: `Bearer ${token}` } });
+            };
+
+            if (editingId) {
+                // ✅ UPDATE EXISTING
+                await axios.patch(`${API_BASE_URL}/challenges/${editingId}`, payload, { headers: { Authorization: `Bearer ${token}` } });
+                triggerToast("Problem Updated Successfully!", "success");
+            } else {
+                // ✅ CREATE NEW
+                await axios.post(`${API_BASE_URL}/courses/${courseId}/challenges`, payload, { headers: { Authorization: `Bearer ${token}` } });
+                triggerToast("Problem Added Successfully!", "success");
+            }
             
-            triggerToast("Problem Added Successfully!", "success");
             loadChallenges();
-            // Reset Form
-            setCTitle(""); setCDesc(""); setCTests([{ input: "", output: "", hidden: false }]);
+            resetForm();
         } catch (err: any) { 
             triggerToast(err.response?.data?.detail || "Error saving problem", "error"); 
         }
     };
     
-    // Helper to update specific test case
     const updateTestCase = (index: number, field: string, value: any) => {
         const newTests = [...cTests];
         // @ts-ignore
@@ -365,68 +399,124 @@ const CourseBuilder = () => {
     };
 
     return (
-        <div style={{ padding: "40px", maxWidth: "1200px", margin: "0 auto", minHeight: "100vh", background: "#f1f5f9" }}>
-            {/* HEADER */}
-            <div style={{display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "30px"}}>
-                <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-                   <button onClick={() => navigate("/dashboard/courses")} style={{ background: "#E2E8F0", border: "none", padding: "10px", borderRadius: "50%", cursor: "pointer" }}><ArrowLeft size={20} color={brand.textMain} /></button>
-                   <h2 style={{ fontSize: "24px", fontWeight: "800", color: brand.textMain }}>Coding Course Builder <span style={{fontSize: "14px", color: brand.blue, background: "#dbeafe", padding: "4px 10px", borderRadius: "8px"}}>{courseDetails?.language}</span></h2>
-                </div>
-            </div>
+        <div style={{ maxWidth: "1400px", margin: "0 auto", background: brand.bg, height: "100vh", display: "flex", flexDirection: "column", overflow: "hidden" }}>
             
-            {/* TABS */}
-            <div style={{ display: "flex", gap: "10px", marginBottom: "30px" }}>
-                {["Easy", "Medium", "Hard"].map(tab => (
-                    <button key={tab} onClick={() => setActiveTab(tab)} 
-                        style={{ padding: "12px 30px", borderRadius: "30px", background: activeTab === tab ? brand.green : "#e2e8f0", color: activeTab === tab ? "white" : "#64748b", fontWeight: "800", border: "none", cursor: "pointer", transition: "all 0.2s" }}>
-                        {tab} Level
+            {/* ✅ HEADER: Matches Standard Builder Style */}
+            <header style={{ display: "flex", justifyContent: "space-between", alignItems: "center", background: brand.cardBg, padding: "16px 40px", borderBottom: `1px solid ${brand.border}`, zIndex: 50 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: "20px" }}>
+                  <button onClick={() => navigate("/dashboard/courses")} style={{ background: "#E2E8F0", border: "none", padding: "10px", borderRadius: "50%", cursor: "pointer" }}><ArrowLeft size={20} color={brand.textMain} /></button>
+                  
+                  {/* Title & Edit Icon */}
+                  <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                    <h2 style={{ fontSize: "20px", fontWeight: "800", color: brand.textMain, margin: 0 }}>
+                        {courseDetails?.title || "Coding Course Builder"}
+                    </h2>
+                    <span style={{fontSize: "12px", color: brand.blue, background: "#dbeafe", padding: "2px 8px", borderRadius: "6px", fontWeight: "700", textTransform: "uppercase"}}>{courseDetails?.language}</span>
+                    <button 
+                        onClick={handleEditCourseClick} // ✅ Triggers the parent's Edit Modal
+                        style={{ background: "none", border: "none", cursor: "pointer", padding: "5px", display: "flex", alignItems: "center" }}
+                        title="Edit Course Details"
+                    >
+                        <Edit size={18} color={brand.textLight} />
                     </button>
-                ))}
-            </div>
+                  </div>
+                </div>
 
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 350px", gap: "40px" }}>
-                {/* LEFT: FORM */}
-                <div style={{ background: "white", padding: "30px", borderRadius: "16px", border: "1px solid #cbd5e1" }}>
-                    <div style={{display:"flex", gap:"10px", marginBottom: "15px"}}>
-                        <input value={cTitle} onChange={e => setCTitle(e.target.value)} placeholder="Problem Title (e.g. Fibonacci)" style={{...inputStyle, flex:1}} />
-                        <button onClick={handleAutoFill} disabled={loadingAI} style={{padding:"0 20px", background: loadingAI ? "#cbd5e1" : "#7c3aed", color:"white", border:"none", borderRadius:"8px", fontWeight:"700", cursor: loadingAI ? "wait" : "pointer", transition: "all 0.2s"}}>
-                            {loadingAI ? "..." : "✨ AI Auto Fill"}
+                <div style={{ display: "flex", gap: "12px" }}>
+                    {/* ✅ Preview Button */}
+                    <button onClick={() => navigate(`/dashboard/course/${courseId}/preview`)} style={{ padding: "10px 20px", background: "white", color: "#005EB8", border: "1px solid #005EB8", borderRadius: "8px", fontWeight: "600", cursor: "pointer" }}>Preview & Manage</button>
+                    <button onClick={handlePublish} disabled={isPublishing} style={{ padding: "12px 32px", borderRadius: "10px", border: "none", background: brand.green, color: "white", fontWeight: "800", cursor: "pointer" }}>{isPublishing ? "Publishing..." : "Publish Course"}</button>
+                </div>
+            </header>
+            
+            {/* CONTENT AREA */}
+            <div style={{ padding: "40px", flex: 1, overflowY: "auto" }}>
+                
+                {/* TABS */}
+                <div style={{ display: "flex", gap: "10px", marginBottom: "30px", justifyContent: "center" }}>
+                    {["Easy", "Medium", "Hard"].map(tab => (
+                        <button key={tab} onClick={() => { setActiveTab(tab); resetForm(); }} 
+                            style={{ padding: "12px 40px", borderRadius: "30px", background: activeTab === tab ? brand.green : "white", color: activeTab === tab ? "white" : "#64748b", fontWeight: "800", border: activeTab === tab ? "none" : "1px solid #cbd5e1", cursor: "pointer", transition: "all 0.2s", boxShadow: "0 4px 6px rgba(0,0,0,0.05)" }}>
+                            {tab} Level
+                        </button>
+                    ))}
+                </div>
+
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 400px", gap: "40px", maxWidth: "1200px", margin: "0 auto" }}>
+                    {/* LEFT: FORM */}
+                    <div style={{ background: "white", padding: "30px", borderRadius: "16px", border: "1px solid #cbd5e1", boxShadow: "0 4px 12px rgba(0,0,0,0.03)" }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "20px", alignItems: "center" }}>
+                             <h3 style={{fontSize:"18px", fontWeight:"800", color: brand.textMain}}>
+                                {editingId ? "Edit Problem" : "Add New Problem"}
+                             </h3>
+                             {editingId && <button onClick={resetForm} style={{fontSize:"12px", color: brand.textLight, background:"#f1f5f9", padding:"5px 10px", borderRadius:"6px", border:"none", cursor:"pointer"}}>Cancel Edit</button>}
+                        </div>
+
+                        <div style={{display:"flex", gap:"10px", marginBottom: "15px"}}>
+                            <input value={cTitle} onChange={e => setCTitle(e.target.value)} placeholder="Problem Title (e.g. Fibonacci)" style={{...inputStyle, flex:1}} />
+                            <button onClick={handleAutoFill} disabled={loadingAI} style={{padding:"0 20px", background: loadingAI ? "#cbd5e1" : "#7c3aed", color:"white", border:"none", borderRadius:"8px", fontWeight:"700", cursor: loadingAI ? "wait" : "pointer", transition: "all 0.2s"}}>
+                                {loadingAI ? "..." : "✨ AI Auto Fill"}
+                            </button>
+                        </div>
+                        <textarea rows={5} value={cDesc} onChange={e => setCDesc(e.target.value)} placeholder="Problem Description..." style={{...inputStyle, marginBottom:"20px", resize: "vertical"}} />
+                        
+                        {/* Test Cases UI */}
+                        <div style={{background:"#f8fafc", padding:"15px", borderRadius:"12px", marginBottom:"20px", border: "1px solid #e2e8f0"}}>
+                            <label style={labelStyle}>Test Cases</label>
+                            {cTests.map((tc, i) => (
+                                <div key={i} style={{display:"flex", gap:"10px", marginBottom:"10px", alignItems: "center"}}>
+                                    <input placeholder="Input" value={tc.input} onChange={e => updateTestCase(i, "input", e.target.value)} style={{...inputStyle, flex: 1}}/>
+                                    <input placeholder="Output" value={tc.output} onChange={e => updateTestCase(i, "output", e.target.value)} style={{...inputStyle, flex: 1}}/>
+                                    <label style={{fontSize:"12px", display:"flex", alignItems:"center", gap:"5px", cursor: "pointer", fontWeight: "600", color: brand.textLight}}>
+                                        <input type="checkbox" checked={tc.hidden} onChange={e => updateTestCase(i, "hidden", e.target.checked)} /> Hidden
+                                    </label>
+                                    {cTests.length > 1 && <X size={16} color="#ef4444" cursor="pointer" onClick={() => { const n = cTests.filter((_, idx) => idx !== i); setCTests(n); }} />}
+                                </div>
+                            ))}
+                            <button onClick={() => setCTests([...cTests, {input:"", output:"", hidden:false}])} style={{fontSize:"13px", color:brand.blue, background:"none", border:"none", cursor:"pointer", marginTop:"5px", fontWeight: "700"}}>+ Add Test Case</button>
+                        </div>
+
+                        <button onClick={saveChallenge} style={{width:"100%", padding:"15px", background: editingId ? "#f59e0b" : brand.blue, color:"white", fontWeight:"800", borderRadius:"10px", border:"none", cursor:"pointer", boxShadow: "0 4px 12px rgba(0, 0, 0, 0.1)"}}>
+                            {editingId ? "Update Problem" : `Save to ${activeTab} Session`}
                         </button>
                     </div>
-                    <textarea rows={5} value={cDesc} onChange={e => setCDesc(e.target.value)} placeholder="Problem Description..." style={{...inputStyle, marginBottom:"20px", resize: "vertical"}} />
-                    
-                    {/* Test Cases UI */}
-                    <div style={{background:"#f8fafc", padding:"15px", borderRadius:"12px", marginBottom:"20px", border: "1px solid #e2e8f0"}}>
-                        <label style={labelStyle}>Test Cases</label>
-                        {cTests.map((tc, i) => (
-                            <div key={i} style={{display:"flex", gap:"10px", marginBottom:"10px", alignItems: "center"}}>
-                                <input placeholder="Input" value={tc.input} onChange={e => updateTestCase(i, "input", e.target.value)} style={{...inputStyle, flex: 1}}/>
-                                <input placeholder="Output" value={tc.output} onChange={e => updateTestCase(i, "output", e.target.value)} style={{...inputStyle, flex: 1}}/>
-                                <label style={{fontSize:"12px", display:"flex", alignItems:"center", gap:"5px", cursor: "pointer", fontWeight: "600", color: brand.textLight}}>
-                                    <input type="checkbox" checked={tc.hidden} onChange={e => updateTestCase(i, "hidden", e.target.checked)} /> Hidden
-                                </label>
-                                {cTests.length > 1 && <X size={16} color="#ef4444" cursor="pointer" onClick={() => { const n = cTests.filter((_, idx) => idx !== i); setCTests(n); }} />}
-                            </div>
-                        ))}
-                        <button onClick={() => setCTests([...cTests, {input:"", output:"", hidden:false}])} style={{fontSize:"13px", color:brand.blue, background:"none", border:"none", cursor:"pointer", marginTop:"5px", fontWeight: "700"}}>+ Add Test Case</button>
-                    </div>
 
-                    <button onClick={saveChallenge} style={{width:"100%", padding:"15px", background:brand.blue, color:"white", fontWeight:"800", borderRadius:"10px", border:"none", cursor:"pointer", boxShadow: "0 4px 12px rgba(0, 94, 184, 0.2)"}}>Save to {activeTab} Session</button>
-                </div>
-
-                {/* RIGHT: LIST */}
-                <div style={{ background: "#f8fafc", padding: "20px", borderRadius: "16px", border: "1px solid #cbd5e1", height: "fit-content" }}>
-                    <h3 style={{fontSize:"16px", fontWeight:"800", marginBottom:"15px", color: brand.textMain}}>Problems in {activeTab}</h3>
-                    <div style={{ maxHeight: "400px", overflowY: "auto" }}>
-                        {challenges.filter(c => c.difficulty === activeTab).map(c => (
-                            <div key={c.id} style={{padding:"14px", background:"white", borderRadius:"10px", border:"1px solid #cbd5e1", marginBottom:"10px", fontSize:"14px", fontWeight:"600", color: brand.textMain, display: "flex", alignItems: "center", gap: "10px"}}>
-                                <Code size={16} color={brand.blue} /> {c.title}
-                            </div>
-                        ))}
+                    {/* RIGHT: LIST (With Edit/Delete Features) */}
+                    <div style={{ background: "#f8fafc", padding: "20px", borderRadius: "16px", border: "1px solid #cbd5e1", height: "fit-content", maxHeight: "80vh", overflowY: "auto" }}>
+                        <h3 style={{fontSize:"16px", fontWeight:"800", marginBottom:"15px", color: brand.textMain}}>Problems in {activeTab}</h3>
+                        <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+                            {challenges.filter(c => c.difficulty === activeTab).map(c => (
+                                <div 
+                                    key={c.id} 
+                                    onClick={() => handleEditChallenge(c)} // ✅ Click to Edit
+                                    style={{
+                                        padding:"14px", background:"white", borderRadius:"10px", border: editingId === c.id ? `2px solid ${brand.blue}` : "1px solid #cbd5e1", 
+                                        fontSize:"14px", fontWeight:"600", color: brand.textMain, display: "flex", justifyContent: "space-between", alignItems: "center", cursor: "pointer", transition: "all 0.2s"
+                                    }}
+                                >
+                                    <div style={{display: "flex", alignItems: "center", gap: "10px"}}>
+                                        <Code size={16} color={brand.blue} /> {c.title}
+                                    </div>
+                                    <div style={{display: "flex", alignItems: "center", gap: "8px"}}>
+                                        {/* Edit Indicator */}
+                                        {editingId === c.id && <span style={{fontSize: "10px", color: brand.blue, fontWeight: "800", background: "#dbeafe", padding: "2px 6px", borderRadius: "4px"}}>EDITING</span>}
+                                        
+                                        <Trash2 
+                                            size={16} 
+                                            color="#cbd5e1" 
+                                            style={{cursor: "pointer", transition: "color 0.2s"}} 
+                                            onMouseEnter={(e) => (e.currentTarget.style.color = "#ef4444")}
+                                            onMouseLeave={(e) => (e.currentTarget.style.color = "#cbd5e1")}
+                                            onClick={(e) => handleDeleteChallenge(c.id, e)} // ✅ Click to Delete
+                                        />
+                                    </div>
+                                </div>
+                            ))}
+                            {challenges.filter(c => c.difficulty === activeTab).length === 0 && (
+                                <div style={{textAlign: "center", padding: "20px", color: brand.textLight, fontSize: "13px"}}>No problems yet.</div>
+                            )}
+                        </div>
                     </div>
-                    <button onClick={handlePublish} disabled={isPublishing} style={{marginTop:"30px", width:"100%", padding:"14px", background:brand.green, color:"white", borderRadius:"10px", border:"none", fontWeight:"800", cursor:"pointer", boxShadow: "0 4px 12px rgba(135, 194, 50, 0.25)"}}>
-                        {isPublishing ? "Publishing..." : "Publish Course"}
-                    </button>
                 </div>
             </div>
         </div>

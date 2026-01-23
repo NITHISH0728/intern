@@ -226,6 +226,12 @@ class NotificationResponse(BaseModel):
     is_read: bool
     created_at: datetime
         
+class ChallengeUpdate(BaseModel):
+    title: Optional[str] = None
+    description: Optional[str] = None
+    difficulty: Optional[str] = None
+    test_cases: Optional[str] = None
+        
 # --- 🔑 AUTH LOGIC ---
 def verify_password(plain_password, hashed_password):
     if isinstance(hashed_password, str): hashed_password = hashed_password.encode('utf-8')
@@ -1582,6 +1588,49 @@ async def mark_challenge_solved(challenge_id: int, db: AsyncSession = Depends(ge
         pass
 
     return {"status": "success", "message": "Challenge marked as solved"}
+
+@app.patch("/api/v1/challenges/{challenge_id}")
+async def update_challenge(challenge_id: int, update: ChallengeUpdate, db: AsyncSession = Depends(get_db), current_user: models.User = Depends(require_instructor)):
+    res = await db.execute(select(models.CourseChallenge).where(models.CourseChallenge.id == challenge_id))
+    challenge = res.scalars().first()
+    
+    if not challenge:
+        raise HTTPException(status_code=404, detail="Challenge not found")
+
+    if update.title: challenge.title = update.title
+    if update.description: challenge.description = update.description
+    if update.difficulty: challenge.difficulty = update.difficulty
+    if update.test_cases: challenge.test_cases = update.test_cases
+    
+    await db.commit()
+    
+    # Clear Cache
+    cache_key = f"course_{challenge.course_id}_challenges"
+    await redis_client.delete(cache_key)
+    
+    return {"message": "Challenge updated successfully"}
+
+@app.delete("/api/v1/challenges/{challenge_id}")
+async def delete_challenge(challenge_id: int, db: AsyncSession = Depends(get_db), current_user: models.User = Depends(require_instructor)):
+    res = await db.execute(select(models.CourseChallenge).where(models.CourseChallenge.id == challenge_id))
+    challenge = res.scalars().first()
+    
+    if not challenge:
+        raise HTTPException(status_code=404, detail="Challenge not found")
+        
+    course_id = challenge.course_id # Save for cache clearing
+    
+    # Delete related progress first
+    await db.execute(text("DELETE FROM challenge_progress WHERE challenge_id = :cid"), {"cid": challenge_id})
+    
+    await db.delete(challenge)
+    await db.commit()
+    
+    # Clear Cache
+    cache_key = f"course_{course_id}_challenges"
+    await redis_client.delete(cache_key)
+    
+    return {"message": "Challenge deleted"}
     
 @app.get("/")
 def read_root(): return {"status": "online", "message": "iQmath Military Grade API Active 🟢"}
