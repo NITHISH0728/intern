@@ -19,6 +19,7 @@ import Dashboard from "./Dashboard";
 import InstructorSettings from "./InstructorSettings"; 
 import StudentManagement from "./StudentManagement";
 import Messages from "./Messages";
+import CodingCourseManager from "./CodingCourseManager";
 // --- Modified CourseList Component ---
 const CourseList = () => {
   const [courses, setCourses] = useState([]);
@@ -159,6 +160,7 @@ function App() {
           <Route path="course/:courseId/builder" element={<CourseBuilder />} />
           <Route path="assignments" element={<AssignmentManager />} />
           <Route path="add-admits" element={<AddAdmits />} />
+          <Route path="course/:courseId/preview" element={<CodingCourseManager />} />
           <Route path="course/:courseId/preview" element={<CoursePreview />} />
           <Route path="code-arena" element={<CodeArena />} />
           <Route path="students" element={<StudentManagement />} />
