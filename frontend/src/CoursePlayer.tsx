@@ -9,7 +9,7 @@ import {
   PlayCircle, FileText, ChevronLeft, Menu, Code, HelpCircle, 
   UploadCloud, Play, Save, Monitor, Cpu, ChevronDown, ChevronRight, CreditCard,
   File as FileIcon, X, CheckCircle, Radio, Lock, ArrowLeft, AlertCircle, Clock, 
-  Zap, CheckSquare, Square, CheckCheck, Award, Edit, AlertTriangle // <--- Added 'Check' icon here
+  Zap, CheckSquare, Square, CheckCheck, Award, Edit, AlertTriangle, Maximize, Minimize // <--- Added 'Check' icon here
 } from "lucide-react";
 
 
@@ -504,8 +504,11 @@ const CodingPlayer = ({ course, token }: { course: any, token: string }) => {
 // --- ⏳ DELAYED PLAYER COMPONENT (Fixes the crash) ---
 const DelayedVideoPlayer = ({ lesson, plyrOptions }: { lesson: any, plyrOptions: any }) => {
     const [isReady, setIsReady] = useState(false);
-    // 1️⃣ Create a Ref to control the player programmatically
+    const [isFullscreen, setIsFullscreen] = useState(false);
+    
+    // 1️⃣ REFS: One for API, One for the Super Container
     const plyrRef = useRef<any>(null);
+    const containerRef = useRef<HTMLDivElement>(null);
 
     const getYoutubeId = (url: string) => {
         const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|&v=)([^#&?]*).*/;
@@ -515,14 +518,29 @@ const DelayedVideoPlayer = ({ lesson, plyrOptions }: { lesson: any, plyrOptions:
 
     useEffect(() => {
         setIsReady(false);
-        const timer = setTimeout(() => {
-            setIsReady(true);
-        }, 1000); 
+        const timer = setTimeout(() => setIsReady(true), 1000); 
         return () => clearTimeout(timer);
     }, [lesson.id]);
 
+    // 2️⃣ CUSTOM FULLSCREEN TOGGLE
+    const toggleFullScreen = () => {
+        if (!containerRef.current) return;
+
+        if (!document.fullscreenElement) {
+            containerRef.current.requestFullscreen().then(() => setIsFullscreen(true)).catch(err => console.error("Fullscreen failed", err));
+        } else {
+            document.exitFullscreen().then(() => setIsFullscreen(false));
+        }
+    };
+
+    // 3️⃣ HIDE DEFAULT FULLSCREEN BUTTON (So users use ours)
+    // We override the passed options to remove 'fullscreen' from controls
+    const customOptions = useMemo(() => ({
+        ...plyrOptions,
+        controls: ['play-large', 'play', 'progress', 'current-time', 'mute', 'volume'], // ❌ Removed 'fullscreen'
+    }), [plyrOptions]);
+
     const videoId = getYoutubeId(lesson.url);
-    
     if (!videoId) return <div className="text-white p-10">Invalid Video URL</div>;
 
     if (!isReady) {
@@ -538,57 +556,74 @@ const DelayedVideoPlayer = ({ lesson, plyrOptions }: { lesson: any, plyrOptions:
     
     return (
          <div style={{ width: "100%", height: "100%", background: "black", display: "flex", alignItems: "center", justifyContent: "center" }}>
-            {/* 2️⃣ Added position: relative here so the shield stays inside */}
-            <div style={{ width: "100%", maxWidth: "1000px", borderRadius: "12px", overflow: "hidden", boxShadow: "0 20px 50px rgba(0,0,0,0.5)", position: "relative" }}>
-                <style>{` .plyr__video-embed iframe { top: -50%; height: 200%; } :root { --plyr-color-main: #005EB8; } `}</style>
+            {/* 4️⃣ SUPER CONTAINER: This goes fullscreen, carrying everything inside */}
+            <div 
+                ref={containerRef}
+                className="group relative"
+                style={{ 
+                    width: isFullscreen ? "100vw" : "100%", 
+                    height: isFullscreen ? "100vh" : "auto",
+                    maxWidth: isFullscreen ? "none" : "1000px", 
+                    borderRadius: isFullscreen ? "0" : "12px", 
+                    overflow: "hidden", 
+                    boxShadow: "0 20px 50px rgba(0,0,0,0.5)", 
+                    background: "black",
+                    display: "flex", // Centers video in fullscreen
+                    alignItems: "center",
+                    justifyContent: "center"
+                }}
+            >
+                <style>{` 
+                    .plyr__video-embed iframe { top: -50%; height: 200%; } 
+                    :root { --plyr-color-main: #005EB8; } 
+                    /* Hide YouTube Title/Avatar */
+                    .plyr__video-embed iframe { pointer-events: none; }
+                `}</style>
                 
-                {/* 3️⃣ Attach the ref to Plyr */}
-                <Plyr 
-                    ref={plyrRef} 
-                    key={lesson.id} 
-                    source={plyrSource} 
-                    options={plyrOptions} 
-                />
+                {/* Wrapper allows styling the player size properly within flex container */}
+                <div style={{ width: "100%", height: "100%" }}>
+                    <Plyr 
+                        ref={plyrRef} 
+                        key={lesson.id} 
+                        source={plyrSource} 
+                        options={customOptions} // ✅ Uses options WITHOUT default fullscreen button
+                    />
+                </div>
 
-                {/* 🛡️ MILITARY GRADE INTERCEPTOR SHIELD 
-                    This div sits ON TOP of the video but stays invisible.
-                    It intercepts clicks so they never hit the YouTube iframe.
-                */}
+                {/* 🛡️ INTERCEPTOR SHIELD (Still works in Fullscreen!) */}
                 <div 
                     style={{
                         position: "absolute",
                         top: 0,
                         left: 0,
                         width: "100%",
-                        height: "82%", // Covers top 82% (Leaves the bottom controls exposed for user interaction)
-                        zIndex: 50, // Must be higher than the video
+                        height: "85%", // Covers top 85%
+                        zIndex: 50,
                         cursor: "pointer",
-                        background: "transparent", // Invisible
-                        touchAction: "manipulation" // Improves touch response
+                        background: "transparent",
+                        touchAction: "manipulation"
                     }}
-                    onClick={() => {
-                        // 4️⃣ On Single Tap: Toggle Play/Pause via API
-                        if (plyrRef.current?.plyr) {
-                            plyrRef.current.plyr.togglePlay();
-                        }
-                    }}
+                    onClick={() => { if (plyrRef.current?.plyr) plyrRef.current.plyr.togglePlay(); }}
                     onDoubleClick={(e) => {
-                        // 5️⃣ On Double Tap: BLOCK YouTube, prevent Zoom
                         e.stopPropagation();
                         e.preventDefault();
-                        
-                        // Optional: You can implement "Seek +10s" here if you want
-                        // if (plyrRef.current?.plyr) plyrRef.current.plyr.forward(10);
-                        
-                        console.log("🛡️ Interceptor Blocked YouTube Overlay");
+                        console.log("🛡️ Blocked Double Tap");
                     }}
                 />
+
+                {/* 5️⃣ CUSTOM FULLSCREEN BUTTON (Floating Overlay) */}
+                <button 
+                    onClick={toggleFullScreen}
+                    className="absolute bottom-16 right-6 z-[60] bg-black/60 text-white p-2 rounded-lg hover:bg-blue-600 transition-colors opacity-0 group-hover:opacity-100 duration-300"
+                    title={isFullscreen ? "Exit Fullscreen" : "Enter Fullscreen"}
+                >
+                    {isFullscreen ? <Minimize size={20} /> : <Maximize size={20} />}
+                </button>
             </div>
         </div>
     );
 };
 
-// --- 🕵️ PROCTORING COMPONENT (FIXED & TESTED) ---
 // --- 🕵️ PROCTORING COMPONENT (FIXED) ---
 const LiveTestProctor = ({ lesson }: { lesson: any }) => {
     // States: 
