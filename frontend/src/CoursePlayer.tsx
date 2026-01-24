@@ -1,8 +1,8 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import axios from "axios";
 import Editor from "@monaco-editor/react"; 
-import Plyr from "plyr-react"; 
+import Plyr from "plyr-react";
 import "plyr/dist/plyr.css"; 
 import API_BASE_URL from './config';
 import { 
@@ -504,50 +504,85 @@ const CodingPlayer = ({ course, token }: { course: any, token: string }) => {
 // --- ⏳ DELAYED PLAYER COMPONENT (Fixes the crash) ---
 const DelayedVideoPlayer = ({ lesson, plyrOptions }: { lesson: any, plyrOptions: any }) => {
     const [isReady, setIsReady] = useState(false);
+    // 1️⃣ Create a Ref to control the player programmatically
+    const plyrRef = useRef<any>(null);
 
-    // This helper extracts the ID (moved here so it's accessible)
     const getYoutubeId = (url: string) => {
         const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|&v=)([^#&?]*).*/;
         const match = url.match(regExp);
         return (match && match[2].length === 11) ? match[2] : null;
     };
 
-    // ⚡ THE MAGIC: Whenever the lesson ID changes, we reset 'isReady' to false
-    // Then wait 500ms before showing the new player.
-    // This destroys the old player completely (like switching to notes).
     useEffect(() => {
         setIsReady(false);
         const timer = setTimeout(() => {
             setIsReady(true);
-        }, 1000); // 1 second delay (You can make this 3000 for 3 secs)
+        }, 1000); 
         return () => clearTimeout(timer);
     }, [lesson.id]);
 
     const videoId = getYoutubeId(lesson.url);
     
-    // 1. If Video ID is invalid
     if (!videoId) return <div className="text-white p-10">Invalid Video URL</div>;
 
-    // 2. If Loading (The transition state)
     if (!isReady) {
         return (
             <div className="w-full h-full flex flex-col items-center justify-center bg-black">
-                {/* Simple Loading Spinner */}
                 <div className="w-10 h-10 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mb-4"></div>
                 <p className="text-white text-sm font-bold animate-pulse">LOADING NEXT LESSON...</p>
             </div>
         );
     }
 
-    // 3. The Actual Player (Only renders after delay)
     const plyrSource = { type: "video" as const, sources: [{ src: videoId, provider: "youtube" as const }] };
     
     return (
          <div style={{ width: "100%", height: "100%", background: "black", display: "flex", alignItems: "center", justifyContent: "center" }}>
-            <div style={{ width: "100%", maxWidth: "1000px", borderRadius: "12px", overflow: "hidden", boxShadow: "0 20px 50px rgba(0,0,0,0.5)" }}>
+            {/* 2️⃣ Added position: relative here so the shield stays inside */}
+            <div style={{ width: "100%", maxWidth: "1000px", borderRadius: "12px", overflow: "hidden", boxShadow: "0 20px 50px rgba(0,0,0,0.5)", position: "relative" }}>
                 <style>{` .plyr__video-embed iframe { top: -50%; height: 200%; } :root { --plyr-color-main: #005EB8; } `}</style>
-                {/* We use the key here to ensure React treats it as a fresh instance */}
-                <Plyr key={lesson.id} source={plyrSource} options={plyrOptions} />
+                
+                {/* 3️⃣ Attach the ref to Plyr */}
+                <Plyr 
+                    ref={plyrRef} 
+                    key={lesson.id} 
+                    source={plyrSource} 
+                    options={plyrOptions} 
+                />
+
+                {/* 🛡️ MILITARY GRADE INTERCEPTOR SHIELD 
+                    This div sits ON TOP of the video but stays invisible.
+                    It intercepts clicks so they never hit the YouTube iframe.
+                */}
+                <div 
+                    style={{
+                        position: "absolute",
+                        top: 0,
+                        left: 0,
+                        width: "100%",
+                        height: "82%", // Covers top 82% (Leaves the bottom controls exposed for user interaction)
+                        zIndex: 50, // Must be higher than the video
+                        cursor: "pointer",
+                        background: "transparent", // Invisible
+                        touchAction: "manipulation" // Improves touch response
+                    }}
+                    onClick={() => {
+                        // 4️⃣ On Single Tap: Toggle Play/Pause via API
+                        if (plyrRef.current?.plyr) {
+                            plyrRef.current.plyr.togglePlay();
+                        }
+                    }}
+                    onDoubleClick={(e) => {
+                        // 5️⃣ On Double Tap: BLOCK YouTube, prevent Zoom
+                        e.stopPropagation();
+                        e.preventDefault();
+                        
+                        // Optional: You can implement "Seek +10s" here if you want
+                        // if (plyrRef.current?.plyr) plyrRef.current.plyr.forward(10);
+                        
+                        console.log("🛡️ Interceptor Blocked YouTube Overlay");
+                    }}
+                />
             </div>
         </div>
     );
