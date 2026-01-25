@@ -9,7 +9,7 @@ import {
   PlayCircle, FileText, ChevronLeft, Menu, Code, HelpCircle, 
   UploadCloud, Play, Save, Monitor, Cpu, ChevronDown, ChevronRight, CreditCard,
   File as FileIcon, X, CheckCircle, Radio, Lock, ArrowLeft, AlertCircle, Clock, 
-  Zap, CheckSquare, Square, CheckCheck, Award, Edit, AlertTriangle, Maximize, Minimize // <--- Added 'Check' icon here
+  Zap, CheckSquare, Square, CheckCheck, Award, Edit, AlertTriangle, Maximize, Minimize, LockKeyhole // <--- Added 'Check' icon here
 } from "lucide-react";
 
 
@@ -885,7 +885,6 @@ const LiveTestProctor = ({ lesson }: { lesson: any }) => {
 };
 
 // --- MAIN PLAYER COMPONENT (UNTOUCHED) ---
-// --- 🔵 MAIN PLAYER COMPONENT (Updated with Completion Logic) ---
 const CoursePlayer = () => {
   const { courseId } = useParams();
   const navigate = useNavigate();
@@ -897,47 +896,27 @@ const CoursePlayer = () => {
   const [isTransitioning, setIsTransitioning] = useState(false);
   const [assignmentFile, setAssignmentFile] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
-  
-  // ✅ 1. ADD: State to trigger re-renders when items are marked complete
   const [refreshTrigger, setRefreshTrigger] = useState(0);
-  
   const [isEditing, setIsEditing] = useState(false);
-  const [editForm, setEditForm] = useState({
-      title: "",
-      description: "",
-      price: 0,
-      image_url: "",
-      language: ""
-  });
+  const [editForm, setEditForm] = useState({ title: "", description: "", price: 0, image_url: "", language: "" });
+  
+  // ✅ 1. NEW STATE FOR PAYWALL
+  const [isTrialExpired, setIsTrialExpired] = useState(false);
 
-  // ✅ NEW: Open Edit Modal and populate data
   const handleEditClick = () => {
       if (!course) return;
-      setEditForm({
-          title: course.title || "",
-          description: course.description || "",
-          price: course.price || 0,
-          image_url: course.image_url || "",
-          language: course.language || ""
-      });
+      setEditForm({ title: course.title || "", description: course.description || "", price: course.price || 0, image_url: course.image_url || "", language: course.language || "" });
       setIsEditing(true);
   };
 
-  // ✅ NEW: Save Changes to Backend
   const handleSaveChanges = async () => {
       try {
           const token = localStorage.getItem("token");
-          await axios.patch(`${API_BASE_URL}/courses/${courseId}/details`, editForm, {
-              headers: { Authorization: `Bearer ${token}` }
-          });
-          
+          await axios.patch(`${API_BASE_URL}/courses/${courseId}/details`, editForm, { headers: { Authorization: `Bearer ${token}` } });
           triggerToast("Course Updated Successfully!", "success");
           setIsEditing(false);
-          setRefreshTrigger(prev => prev + 1); // Refresh UI to show new title/etc
-      } catch (err) {
-          console.error(err);
-          triggerToast("Failed to update course.", "error");
-      }
+          setRefreshTrigger(prev => prev + 1); 
+      } catch (err) { console.error(err); triggerToast("Failed to update course.", "error"); }
   };
 
   const [toast, setToast] = useState({ show: false, message: "", type: "success" });
@@ -960,18 +939,17 @@ const CoursePlayer = () => {
             description: "Lifetime Course Access",
             order_id: data.id, 
             handler: function (response: any) { 
-                triggerToast(`Payment Successful! ID: ${response.razorpay_payment_id}`, "success"); 
+                triggerToast(`Payment Successful! ID: ${response.razorpay_payment_id}`, "success");
+                // ✅ RELOAD PAGE TO UNLOCK CONTENT
+                setTimeout(() => window.location.reload(), 1500);
             },
             theme: { color: "#87C232" }
         };
         const rzp1 = new (window as any).Razorpay(options);
         rzp1.open();
-    } catch (error) { 
-        triggerToast("Payment init failed", "error");
-    }
+    } catch (error) { triggerToast("Payment init failed", "error"); }
   };
 
-  // ✅ 2. UPDATE: Added refreshTrigger to dependency array
   useEffect(() => {
     const fetchCourse = async () => {
       try {
@@ -983,21 +961,21 @@ const CoursePlayer = () => {
             setExpandedModules([res.data.modules[0].id]); 
             if (res.data.modules[0].lessons?.length > 0) setActiveLesson(res.data.modules[0].lessons[0]);
         }
-      } catch (err) { 
+      } catch (err: any) { 
           console.error(err); 
-      } finally {
-          // ✅ FIX 2: This turns off the loading screen
-          setLoading(false); 
-      }
+          // ✅ 2. CATCH 402 ERROR
+          if (err.response?.status === 402) {
+              setIsTrialExpired(true);
+          }
+      } finally { setLoading(false); }
     };
     fetchCourse();
   }, [courseId, refreshTrigger]);
+
   useEffect(() => {
     if (activeLesson) {
         setIsTransitioning(true);
-        const timer = setTimeout(() => {
-            setIsTransitioning(false);
-        }, 500); 
+        const timer = setTimeout(() => { setIsTransitioning(false); }, 500); 
         return () => clearTimeout(timer);
     }
   }, [activeLesson?.id]);
@@ -1006,12 +984,8 @@ const CoursePlayer = () => {
   
   const getEmbedUrl = (url: string) => {
     if (!url) return "";
-    if (url.includes("docs.google.com/forms")) {
-        return url.replace(/\/viewform.*/, "/viewform?embedded=true").replace(/\/view.*/, "/viewform?embedded=true");
-    }
-    if (url.includes("script.google.com")) {
-        return url; 
-    }
+    if (url.includes("docs.google.com/forms")) return url.replace(/\/viewform.*/, "/viewform?embedded=true").replace(/\/view.*/, "/viewform?embedded=true");
+    if (url.includes("script.google.com")) return url; 
     return url.replace("/view", "/preview");
   };
 
@@ -1024,98 +998,53 @@ const CoursePlayer = () => {
     if (!assignmentFile) return;
     setUploading(true);
     const token = localStorage.getItem("token");
-
     try {
         const formData = new FormData();
         formData.append("file", assignmentFile);
         formData.append("lesson_title", activeLesson.title);
-
         await axios.post(`${API_BASE_URL}/submit-assignment`, formData, {
             headers: { "Authorization": `Bearer ${token}` },
-            onUploadProgress: (progressEvent) => {
-                if (progressEvent.total) {
-                    const percent = Math.round((progressEvent.loaded * 100) / progressEvent.total);
-                    console.log(`Uploading: ${percent}%`);
-                }
-            }
+            onUploadProgress: (progressEvent) => { if (progressEvent.total) { const percent = Math.round((progressEvent.loaded * 100) / progressEvent.total); console.log(`Uploading: ${percent}%`); } }
         });
-        
         triggerToast(`✅ Assignment "${assignmentFile.name}" Submitted Successfully!`, "success");
         setAssignmentFile(null); 
-        // ✅ Refresh UI to show tick mark
         setRefreshTrigger(prev => prev + 1);
-
-    } catch (err) {
-        console.error("Upload Error:", err);
-        triggerToast("❌ Upload Failed. Please try again.", "error");
-    } finally {
-        setUploading(false);
-    }
+    } catch (err) { console.error("Upload Error:", err); triggerToast("❌ Upload Failed. Please try again.", "error"); } finally { setUploading(false); }
   };
 
-  // ✅ 3. ADD: Logic to Mark Items as Complete
   const handleToggleComplete = async (lesson: any) => {
       try {
           const token = localStorage.getItem("token");
-          await axios.post(`${API_BASE_URL}/content/${lesson.id}/complete`, {}, {
-              headers: { Authorization: `Bearer ${token}` }
-          });
-          
+          await axios.post(`${API_BASE_URL}/content/${lesson.id}/complete`, {}, { headers: { Authorization: `Bearer ${token}` } });
           triggerToast(lesson.is_completed ? "Marked as Incomplete" : "Marked as Complete!", "success");
           setRefreshTrigger(prev => prev + 1); 
-      } catch (err) {
-          triggerToast("Failed to update status", "error");
-      }
+      } catch (err) { triggerToast("Failed to update status", "error"); }
   };
 
-  // ✅ 4. ADD: Logic to Claim Certificate
   const handleClaimCertificate = async () => {
       try {
           const token = localStorage.getItem("token");
-          const res = await axios.post(`${API_BASE_URL}/courses/${courseId}/claim-certificate`, {}, {
-               headers: { Authorization: `Bearer ${token}` }
-          });
-          
+          const res = await axios.post(`${API_BASE_URL}/courses/${courseId}/claim-certificate`, {}, { headers: { Authorization: `Bearer ${token}` } });
           if(res.data.status === "success") {
               triggerToast("🎉 Certificate Generated Successfully!", "success");
               setTimeout(() => navigate("/student-dashboard"), 2000);
-          } else {
-              triggerToast(res.data.message || "Course not yet complete.", "error");
-          }
-      } catch (err) {
-          triggerToast("Failed to claim certificate.", "error");
-      }
+          } else { triggerToast(res.data.message || "Course not yet complete.", "error"); }
+      } catch (err) { triggerToast("Failed to claim certificate.", "error"); }
   };
 
-  // ✅ 5. ADD: Check if entire course is done
   const isCourseFullyComplete = useMemo(() => {
       if(!course) return false;
-      return course.modules.every((m: any) => 
-          m.lessons.every((l: any) => l.is_completed)
-      );
+      return course.modules.every((m: any) => m.lessons.every((l: any) => l.is_completed));
   }, [course]);
 
-  // ✅ 6. UPDATE: renderContent now has the Checkbox Header
   const renderContent = () => {
     if (!activeLesson) return <div className="text-white p-10 text-center">Select a lesson</div>;
-    
-    if (isTransitioning) {
-        return (
-            <div className="w-full h-full flex flex-col items-center justify-center bg-slate-900 text-white gap-4">
-                <div className="w-10 h-10 border-4 border-[#005EB8] border-t-transparent rounded-full animate-spin"></div>
-                <p className="text-sm font-bold tracking-wider animate-pulse text-slate-400">LOADING...</p>
-            </div>
-        );
-    }
+    if (isTransitioning) return <div className="w-full h-full flex flex-col items-center justify-center bg-slate-900 text-white gap-4"><div className="w-10 h-10 border-4 border-[#005EB8] border-t-transparent rounded-full animate-spin"></div><p className="text-sm font-bold tracking-wider animate-pulse text-slate-400">LOADING...</p></div>;
 
-    // -- Header with Checkbox --
     const completionHeader = (
         <div className="bg-slate-50 border-b border-slate-200 p-4 flex justify-between items-center">
             <h3 className="font-bold text-slate-800">{activeLesson.title}</h3>
-            <div 
-                onClick={() => handleToggleComplete(activeLesson)}
-                className={`flex items-center gap-2 px-4 py-2 rounded-lg cursor-pointer transition-all border ${activeLesson.is_completed ? "bg-green-100 border-green-300 text-green-700" : "bg-white border-slate-300 text-slate-500 hover:bg-slate-100"}`}
-            >
+            <div onClick={() => handleToggleComplete(activeLesson)} className={`flex items-center gap-2 px-4 py-2 rounded-lg cursor-pointer transition-all border ${activeLesson.is_completed ? "bg-green-100 border-green-300 text-green-700" : "bg-white border-slate-300 text-slate-500 hover:bg-slate-100"}`}>
                 {activeLesson.is_completed ? <CheckSquare size={20} /> : <Square size={20} />}
                 <span className="text-sm font-bold">{activeLesson.is_completed ? "Completed" : "Mark as Complete"}</span>
             </div>
@@ -1123,20 +1052,8 @@ const CoursePlayer = () => {
     );
 
     let contentBody = null;
-   if (activeLesson.type === "note") {
-        contentBody = (
-            <div className="w-full h-full relative">
-                <iframe 
-                    src={getEmbedUrl(activeLesson.url)} 
-                    width="100%" 
-                    height="100%" 
-                    className="bg-white border-0" 
-                    allow="autoplay" 
-                />
-                {/* 🛡️ SECURITY OVERLAY: Hides the Google Drive 'Pop-out' button */}
-                <div style={{ position: "absolute", top: 0, right: 0, width: "65px", height: "60px", background: "#202124", zIndex: 50 }}></div>
-            </div>
-        );
+    if (activeLesson.type === "note") {
+        contentBody = ( <div className="w-full h-full relative"><iframe src={getEmbedUrl(activeLesson.url)} width="100%" height="100%" className="bg-white border-0" allow="autoplay" /><div style={{ position: "absolute", top: 0, right: 0, width: "65px", height: "60px", background: "#202124", zIndex: 50 }}></div></div> );
     }
     else if (activeLesson.type === "quiz") contentBody = ( <div className="w-full h-full bg-slate-50 flex flex-col items-center justify-center p-4"><iframe src={getEmbedUrl(activeLesson.url)} width="100%" height="100%" frameBorder="0" className="rounded-xl shadow-sm border border-slate-200 bg-white max-w-4xl" allowFullScreen sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-top-navigation">Loading...</iframe></div> );
     else if (activeLesson.type === "video" || activeLesson.type === "live_class") contentBody = <DelayedVideoPlayer key={activeLesson.id} lesson={activeLesson} plyrOptions={plyrOptions} />;
@@ -1172,13 +1089,52 @@ const CoursePlayer = () => {
     }
     else contentBody = <div className="p-10 text-center">Unknown Content Type</div>;
 
-    return (
-        <div className="flex flex-col h-full">
-            {completionHeader}
-            <div className="flex-1 overflow-hidden relative">{contentBody}</div>
-        </div>
-    );
+    return ( <div className="flex flex-col h-full">{completionHeader}<div className="flex-1 overflow-hidden relative">{contentBody}</div></div> );
   };
+
+  // ✅ 3. PAYWALL VIEW: Renders if trial is expired
+  if (isTrialExpired) {
+      return (
+          <div className="h-screen w-screen flex flex-col items-center justify-center bg-slate-50 relative overflow-hidden">
+              <ToastNotification toast={toast} setToast={setToast} />
+              
+              {/* Back Button */}
+              <button 
+                  onClick={() => navigate("/student-dashboard")} 
+                  className="absolute top-8 left-8 flex items-center gap-2 text-slate-500 hover:text-slate-800 font-bold transition-colors"
+              >
+                  <ArrowLeft size={20} /> Back to Dashboard
+              </button>
+
+              <div className="bg-white p-12 rounded-3xl shadow-2xl text-center max-w-lg w-full border border-slate-100 relative z-10 animate-fade-in-up">
+                  <div className="w-24 h-24 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-6">
+                      <LockKeyhole size={48} className="text-red-500" />
+                  </div>
+                  <h1 className="text-3xl font-extrabold text-slate-900 mb-3">Trial Expired</h1>
+                  <p className="text-slate-500 mb-8 leading-relaxed">
+                      Your 7-day free trial for this course has ended.<br/> 
+                      Unlock lifetime access to continue learning.
+                  </p>
+                  
+                  <div className="bg-slate-50 rounded-xl p-4 mb-8 border border-slate-200">
+                      <p className="text-sm font-bold text-slate-400 uppercase tracking-wide mb-1">Total Price</p>
+                      <p className="text-3xl font-extrabold text-slate-900">₹599 <span className="text-lg font-medium text-slate-400 line-through">₹2999</span></p>
+                  </div>
+
+                  <button 
+                      onClick={handlePayment} 
+                      className="w-full py-4 bg-[#87C232] hover:bg-[#76a82b] text-white rounded-xl font-bold text-lg flex items-center justify-center gap-3 transition-all shadow-lg shadow-green-200 hover:scale-105 active:scale-95"
+                  >
+                      <CreditCard size={20} /> Buy Lifetime Access
+                  </button>
+                  <p className="text-xs text-slate-400 mt-4">Secure payment via Razorpay</p>
+              </div>
+              
+              {/* Decorative Background Elements */}
+              <div className="absolute top-0 left-0 w-full h-64 bg-gradient-to-b from-blue-50 to-transparent -z-0"></div>
+          </div>
+      );
+  }
 
   if(loading) return <div>Loading...</div>;
   if(course?.course_type === "coding") return <CodingPlayer course={course} token={localStorage.getItem("token") || ""} />;
@@ -1186,64 +1142,36 @@ const CoursePlayer = () => {
   return (
     <div className="flex h-screen w-screen overflow-hidden font-sans bg-slate-900 relative">
       <ToastNotification toast={toast} setToast={setToast} /> 
-      
       <div className="flex-1 flex flex-col h-full">
         <header className="h-16 bg-white border-b border-slate-200 flex items-center px-6 justify-between z-10">
           <div className="flex items-center gap-4">
             <button onClick={() => navigate("/student-dashboard")} className="bg-none border-none cursor-pointer text-slate-500 flex items-center gap-2 font-semibold hover:text-slate-800"><ChevronLeft size={20} /> Dashboard</button>
             <div className="h-6 w-px bg-slate-200"></div>
-            
-            {/* ✅ UPDATED: Shows Course Title first (so you see what you are editing) */}
-            <h1 className="text-base font-bold text-slate-900 m-0 max-w-[400px] truncate">
-                {course?.title || activeLesson?.title || "Course Player"}
-            </h1>
+            <h1 className="text-base font-bold text-slate-900 m-0 max-w-[400px] truncate">{course?.title || activeLesson?.title || "Course Player"}</h1>
           </div>
-
           <div className="flex items-center gap-4">
-            {/* ✅ NEW: EDIT BUTTON (Visible only to Instructor) */}
-            {localStorage.getItem("role") === "instructor" && (
-                <button 
-                    onClick={handleEditClick}
-                    className="flex items-center gap-2 bg-slate-100 text-slate-700 px-3 py-2 rounded-lg font-bold border border-slate-200 hover:bg-slate-200 transition-colors text-sm"
-                >
-                    <Edit size={16} /> Edit Course
-                </button>
-            )}
-
+            {localStorage.getItem("role") === "instructor" && ( <button onClick={handleEditClick} className="flex items-center gap-2 bg-slate-100 text-slate-700 px-3 py-2 rounded-lg font-bold border border-slate-200 hover:bg-slate-200 transition-colors text-sm"><Edit size={16} /> Edit Course</button> )}
             <button onClick={handlePayment} className="flex items-center gap-2 bg-[#87C232] text-white px-4 py-2 rounded-lg font-bold border-none cursor-pointer hover:bg-[#76a82b] transition-colors"><CreditCard size={18} /> Buy Lifetime Access</button>
             <button onClick={() => setSidebarOpen(!sidebarOpen)} className="bg-none border-none cursor-pointer"><Menu color={brand.textMain} /></button>
           </div>
         </header>
         <div className="flex-1 bg-white relative overflow-hidden">{renderContent()}</div>
       </div>
-
-      {/* ✅ 7. UPDATE: Sidebar with Module Check Logic */}
       {sidebarOpen && (
         <aside className="w-80 bg-white border-l border-slate-200 flex flex-col h-full">
            <div className="p-6 border-b border-slate-200"><h2 className="text-sm font-extrabold text-slate-900 uppercase tracking-widest m-0">Course Content</h2></div>
            <div className="flex-1 overflow-y-auto p-0">
              {course?.modules.map((module: any, idx: number) => {
-                // ✅ Check if module is fully complete
                 const isModuleComplete = module.lessons.length > 0 && module.lessons.every((l:any) => l.is_completed);
-
                 return (
                     <div key={module.id} className="border-b border-slate-100">
                       <div onClick={() => toggleModule(module.id)} className={`p-4 cursor-pointer flex justify-between items-center transition-colors ${isModuleComplete ? "bg-blue-50/50" : "bg-slate-50 hover:bg-slate-100"}`}>
                         <div className="flex items-center gap-3">
-                            {/* ✅ Blue Double Tick */}
-                            {isModuleComplete ? (
-                                <div className="bg-blue-100 rounded-full p-1 text-[#005EB8]"><CheckCheck size={18} strokeWidth={3} /></div>
-                            ) : (
-                                <div className="w-8 h-8 rounded-full bg-slate-200 flex items-center justify-center text-xs font-bold text-slate-500">{idx + 1}</div>
-                            )}
-                            <div>
-                                <div className={`text-[11px] font-bold uppercase ${isModuleComplete ? "text-[#005EB8]" : "text-slate-500"}`}>{isModuleComplete ? "Completed" : `Section ${idx + 1}`}</div>
-                                <div className={`text-sm font-semibold ${module.is_completed ? "text-slate-400 line-through" : "text-slate-800"}`}>{module.title}</div>
-                            </div>
+                            {isModuleComplete ? (<div className="bg-blue-100 rounded-full p-1 text-[#005EB8]"><CheckCheck size={18} strokeWidth={3} /></div>) : (<div className="w-8 h-8 rounded-full bg-slate-200 flex items-center justify-center text-xs font-bold text-slate-500">{idx + 1}</div>)}
+                            <div><div className={`text-[11px] font-bold uppercase ${isModuleComplete ? "text-[#005EB8]" : "text-slate-500"}`}>{isModuleComplete ? "Completed" : `Section ${idx + 1}`}</div><div className={`text-sm font-semibold ${module.is_completed ? "text-slate-400 line-through" : "text-slate-800"}`}>{module.title}</div></div>
                         </div>
                         {expandedModules.includes(module.id) ? <ChevronDown size={18} color="#64748b" /> : <ChevronRight size={18} color="#64748b" />}
                       </div>
-                      
                       {expandedModules.includes(module.id) && (
                         <div className="animate-fade-in">
                           {module.lessons.map((lesson: any) => {
@@ -1251,9 +1179,7 @@ const CoursePlayer = () => {
                               return (
                                   <div key={lesson.id} onClick={() => setActiveLesson(lesson)} className={`flex items-center gap-3 p-3 pl-12 cursor-pointer border-l-4 transition-all ${isActive ? 'bg-blue-50 border-blue-600' : 'bg-white border-transparent hover:bg-slate-50'}`}>
                                       <div className={isActive ? "text-blue-600" : "text-slate-400"}>
-                                          {lesson.is_completed ? (
-                                               <CheckCircle size={16} className="text-[#87C232]" fill="#ecfccb" />
-                                          ) : (
+                                          {lesson.is_completed ? (<CheckCircle size={16} className="text-[#87C232]" fill="#ecfccb" />) : (
                                               <>
                                                   {lesson.type.includes("video") && <PlayCircle size={16} />}
                                                   {lesson.type === "note" && <FileText size={16} />}
