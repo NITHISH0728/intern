@@ -5,7 +5,7 @@ import API_BASE_URL from './config';
 import { 
   Plus, ArrowLeft, Video, HelpCircle, Zap, FileText, 
   Edit3, Layout, X, Link, Clock, Radio, 
-  AlertCircle, Trash2, CheckCircle, Code,Edit
+  AlertCircle, Trash2, CheckCircle, Code,Edit, Sparkles
 } from "lucide-react";
 
 interface Module {
@@ -454,12 +454,27 @@ const CodingCourseBuilder = () => {
                              {editingId && <button onClick={resetForm} style={{fontSize:"12px", color: brand.textLight, background:"#f1f5f9", padding:"5px 10px", borderRadius:"6px", border:"none", cursor:"pointer"}}>Cancel Edit</button>}
                         </div>
 
-                        <div style={{display:"flex", gap:"10px", marginBottom: "15px"}}>
-                            <input value={cTitle} onChange={e => setCTitle(e.target.value)} placeholder="Problem Title (e.g. Fibonacci)" style={{...inputStyle, flex:1}} />
-                            <button onClick={handleAutoFill} disabled={loadingAI} style={{padding:"0 20px", background: loadingAI ? "#cbd5e1" : "#7c3aed", color:"white", border:"none", borderRadius:"8px", fontWeight:"700", cursor: loadingAI ? "wait" : "pointer", transition: "all 0.2s"}}>
-                                {loadingAI ? "..." : "✨ AI Auto Fill"}
-                            </button>
-                        </div>
+                       <div style={{display:"flex", gap:"10px", marginBottom: "15px"}}>
+    <input value={cTitle} onChange={e => setCTitle(e.target.value)} placeholder="Problem Title (e.g. Fibonacci)" style={{...inputStyle, flex:1}} />
+    <button 
+        onClick={handleAutoFill} 
+        disabled={loadingAI} 
+        style={{
+            padding:"0 20px", 
+            background: loadingAI ? "#cbd5e1" : "#0f172a", // ✅ Black
+            color:"white", 
+            border:"none", 
+            borderRadius:"10px", // Slightly more rounded
+            fontWeight:"700", 
+            fontSize: "13px",
+            cursor: loadingAI ? "wait" : "pointer", 
+            transition: "all 0.2s",
+            display: "flex", alignItems: "center", gap: "8px" // Flex for icon
+        }}
+    >
+        {loadingAI ? "Generating..." : <><Sparkles size={14} /> AI Auto Fill</>} {/* ✅ Icon instead of Emoji */}
+    </button>
+</div>
                         <textarea rows={5} value={cDesc} onChange={e => setCDesc(e.target.value)} placeholder="Problem Description..." style={{...inputStyle, marginBottom:"20px", resize: "vertical"}} />
                         
                         {/* Test Cases UI */}
@@ -478,9 +493,24 @@ const CodingCourseBuilder = () => {
                             <button onClick={() => setCTests([...cTests, {input:"", output:"", hidden:false}])} style={{fontSize:"13px", color:brand.blue, background:"none", border:"none", cursor:"pointer", marginTop:"5px", fontWeight: "700"}}>+ Add Test Case</button>
                         </div>
 
-                        <button onClick={saveChallenge} style={{width:"100%", padding:"15px", background: editingId ? "#f59e0b" : brand.blue, color:"white", fontWeight:"800", borderRadius:"10px", border:"none", cursor:"pointer", boxShadow: "0 4px 12px rgba(0, 0, 0, 0.1)"}}>
-                            {editingId ? "Update Problem" : `Save to ${activeTab} Session`}
-                        </button>
+                       <button 
+    onClick={saveChallenge} 
+    style={{
+        width:"100%", 
+        padding:"16px", 
+        background: editingId ? "#d97706" : "#0f172a", // ✅ Black (Amber for Edit)
+        color:"white", 
+        fontWeight:"800", 
+        borderRadius:"12px", 
+        border:"none", 
+        cursor:"pointer", 
+        boxShadow: "0 4px 12px rgba(0, 0, 0, 0.1)",
+        marginTop: "10px",
+        fontSize: "15px"
+    }}
+>
+    {editingId ? "Update Problem" : `Save Problem to ${activeTab}`}
+</button>
                     </div>
 
                     {/* RIGHT: LIST (With Edit/Delete Features) */}
