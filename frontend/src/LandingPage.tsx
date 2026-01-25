@@ -76,7 +76,7 @@ const IQMathLogo = ({ isTwoTone = false, color = "white" }) => (
       </g>
     </g>
     <text x="180" y="118" fontFamily="Arial, sans-serif" fontWeight="800" fontSize="105" fill={isTwoTone ? BRAND_BLUE : color} letterSpacing="-5">math</text>
-    <text x="185" y="148" fontFamily="Arial, sans-serif" fontWeight="600" fontSize="34" fill={isTwoTone ? BRAND_GREEN : color} letterSpacing="4">Build Your Dreams</text>
+    <text x="185" y="148" fontFamily="Arial, sans-serif" fontWeight="600" fontSize="34" fill={isTwoTone ? BRAND_GREEN : color} letterSpacing="4">Technologies</text>
   </svg>
 );
 
@@ -201,17 +201,9 @@ const LandingPage = () => {
                 transition={{ duration: 0.5 }} 
                 className="drop-shadow-[0_25px_40px_rgba(0,0,0,0.3)] text-center"
               >
-                
-                {/* ✅ LOGIC CHANGE: Different content for different slides */}
                 {index === 0 ? (
-                    // Slide 1 (Green): Show Logo with Custom Color
-                    // You asked to change "Technologies" font color. 
-                    // I'm passing 'color="white"' which makes the base text white.
-                    // The component logic uses BRAND_GREEN for "Technologies" if isTwoTone is true.
-                    // To force a specific color, we might need to tweak the SVG component or just pass props.
                     <IQMathLogo isTwoTone={false} color="white" /> 
                 ) : (
-                    // Slide 2 (Blue): Show "World Class Courses" Text
                     <div className="text-white">
                         <h1 className="text-7xl font-black tracking-tighter leading-none mb-2">
                             WORLD<br/>CLASS<br/>COURSES
@@ -219,11 +211,11 @@ const LandingPage = () => {
                         <div className="h-2 w-32 bg-yellow-400 mx-auto rounded-full mt-6" />
                     </div>
                 )}
-
               </motion.div>
             </AnimatePresence>
           </div>
         </div>
+      </div>
 
       {/* ================= SECTION 2: FEATURES & VIDEOS ================= */}
       <div className="w-full bg-[#F8FAFC] py-20 px-6 lg:px-24 border-t border-slate-200">
@@ -312,7 +304,7 @@ const LandingPage = () => {
               <div className="w-full lg:w-[60%] grid grid-cols-2 md:grid-cols-3 gap-8">
                   {COMPANIES.map((company, i) => (
                       <div key={i} className="flex items-center justify-center p-4 h-24 bg-white rounded-xl shadow-sm border border-slate-100 group overflow-hidden">
-                         <div className="w-full h-full filter grayscale opacity-60 group-hover:grayscale-0 group-hover:opacity-100 group-hover:scale-110 transition-all duration-300 ease-in-out flex items-center justify-center"><CompanyLogo name={company} /></div>
+                          <div className="w-full h-full filter grayscale opacity-60 group-hover:grayscale-0 group-hover:opacity-100 group-hover:scale-110 transition-all duration-300 ease-in-out flex items-center justify-center"><CompanyLogo name={company} /></div>
                       </div>
                   ))}
               </div>
@@ -332,7 +324,7 @@ const LandingPage = () => {
 
       {/* SCROLL TO TOP */}
       <AnimatePresence>{showScrollTop && (<motion.button initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })} className="fixed bottom-8 right-8 p-3 bg-[#005EB8] text-white rounded-full shadow-lg z-50 hover:bg-[#004a94] transition-colors"><ArrowUp size={24} /></motion.button>)}</AnimatePresence>
-    </div>
+
     </div>
   );
 };
