@@ -1,11 +1,11 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { motion, AnimatePresence, type Variants } from "framer-motion"; 
+import { motion, AnimatePresence } from "framer-motion"; 
 import { 
   Shield, ArrowRight, Briefcase, ChevronRight, 
-  BookOpen, Infinity, Award, Headset, Users, FileText,
-  CheckCircle, Mic, Video, PhoneOff, MoreHorizontal,
-  Star, MapPin, Mail, Phone, ArrowUp
+  BookOpen, Infinity, Award, Headset, Users, 
+  CheckCircle, Mic, Video, PhoneOff, 
+  Star, MapPin, Mail, ArrowUp
 } from "lucide-react";
 
 // --- 🎨 BRAND CONSTANTS ---
