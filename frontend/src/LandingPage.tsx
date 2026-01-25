@@ -38,52 +38,102 @@ const SLIDES = [
   },
 ];
 
-// --- 🎨 PRECISE BRAND LOGO (EXACT REPLICA) ---
-// ✅ UPDATED COMPONENT: Added 'techOverrideColor' prop
-const IQMathLogo = ({ isTwoTone = false, color = "white", techOverrideColor = null }: any) => (
-  <svg 
-    viewBox="0 0 540 160" 
-    className="w-full max-w-[320px] lg:max-w-[440px]"
-    xmlns="http://www.w3.org/2000/svg"
-  >
-    <g transform="translate(10, 20)">
-      {/* Precise 'i' - Blue if two-tone */}
-      <circle cx="35" cy="15" r="10" fill={isTwoTone ? BRAND_BLUE : color} />
-      <rect x="25" y="32" width="20" height="68" rx="5" fill={isTwoTone ? BRAND_BLUE : color} />
-      
-      {/* Precise 'Q' - Left part Blue if two-tone */}
-      <path 
-        d="M105 15 A50 50 0 1 0 105 115" 
-        stroke={isTwoTone ? BRAND_BLUE : color} 
-        strokeWidth="18" 
-        fill="none" 
-      />
-      {/* Precise 'Q' - Right part Green if two-tone */}
-      <path 
-        d="M105 15 A50 50 0 0 1 140 105 L 155 125" 
-        stroke={isTwoTone ? BRAND_GREEN : color} 
-        strokeWidth="18" 
-        fill="none" 
-        strokeLinecap="round" 
-      />
-      
-      {/* Circuit Nodes - Green if two-tone */}
-      <g stroke={isTwoTone ? BRAND_GREEN : color} strokeWidth="2.5" fill="none">
-        <path d="M85 65 V50 H95" />
-        <path d="M105 42 V55" />
-        <path d="M122 75 V60 H112" />
-        <circle cx="85" cy="65" r="5" fill={isTwoTone ? BRAND_GREEN : color} stroke="none" />
-        <circle cx="105" cy="42" r="5" fill={isTwoTone ? BRAND_GREEN : color} stroke="none" />
-        <circle cx="122" cy="75" r="5" fill={isTwoTone ? BRAND_GREEN : color} stroke="none" />
+// --- 🎨 PRECISE BRAND LOGO (100% REPLICA) ---
+const IQMathLogo = ({ isTwoTone = false, color = "white", techOverrideColor = null }: any) => {
+  // Colors based on props
+  const iColor = isTwoTone ? BRAND_BLUE : color;
+  const qLeftColor = isTwoTone ? BRAND_BLUE : color;
+  const qRightColor = isTwoTone ? BRAND_GREEN : color;
+  const circuitColor = isTwoTone ? BRAND_GREEN : color;
+  const mathColor = isTwoTone ? BRAND_BLUE : color;
+  // Technologies text: Override > TwoTone Green > Default Color
+  const techColor = techOverrideColor ? techOverrideColor : (isTwoTone ? BRAND_GREEN : color);
+
+  return (
+    <svg 
+      viewBox="0 0 540 160" 
+      className="w-full max-w-[320px] lg:max-w-[440px]"
+      xmlns="http://www.w3.org/2000/svg"
+    >
+      {/* === LETTER 'i' === */}
+      <g>
+        {/* Dot */}
+        <circle cx="45" cy="35" r="13" fill={iColor} />
+        {/* Body (Rounded Rectangle) */}
+        <rect x="36" y="58" width="18" height="65" rx="4" fill={iColor} />
       </g>
-    </g>
-    {/* 'math' text - Blue if two-tone */}
-    <text x="180" y="118" fontFamily="Arial, sans-serif" fontWeight="800" fontSize="105" fill={isTwoTone ? BRAND_BLUE : color} letterSpacing="-5">math</text>
-    
-    {/* ✅ UPDATED 'Technologies' text: Uses override color if provided, else defaults to Green if two-tone */}
-    <text x="185" y="148" fontFamily="Arial, sans-serif" fontWeight="600" fontSize="34" fill={techOverrideColor ? techOverrideColor : (isTwoTone ? BRAND_GREEN : color)} letterSpacing="4">Technologies</text>
-  </svg>
-);
+
+      {/* === LETTER 'Q' (Exact Replica) === */}
+      <g transform="translate(10, 0)">
+        {/* Q Outer Ring Group */}
+        <g strokeWidth="18" fill="none">
+          {/* Left Half (Blue) - Semi-circle */}
+          <path 
+            d="M 135 35 A 50 50 0 0 0 135 135" 
+            stroke={qLeftColor} 
+            strokeLinecap="butt"
+          />
+          {/* Right Half (Green) - Semi-circle */}
+          <path 
+            d="M 135 35 A 50 50 0 0 1 135 135" 
+            stroke={qRightColor} 
+            strokeLinecap="butt"
+          />
+        </g>
+
+        {/* Q Tail (Green) - Thick Rounded Line */}
+        <line 
+          x1="160" y1="120" 
+          x2="185" y2="145" 
+          stroke={qRightColor} 
+          strokeWidth="18" 
+          strokeLinecap="round" 
+        />
+
+        {/* === CIRCUIT DESIGN INSIDE Q (100% Match) === */}
+        <g fill={circuitColor} stroke="none">
+          {/* 1. Middle Tallest Stem */}
+          <circle cx="135" cy="55" r="5" />
+          <rect x="133.5" y="55" width="3" height="60" />
+
+          {/* 2. Left Stem (Jogs Left) */}
+          <circle cx="112" cy="75" r="5" />
+          <path d="M 112 75 V 95 H 125 V 115 H 128 V 92 H 115 V 75 Z" />
+
+          {/* 3. Right Stem (Jogs Right) */}
+          <circle cx="158" cy="85" r="5" />
+          <path d="M 158 85 V 100 H 145 V 115 H 142 V 97 H 155 V 85 Z" />
+        </g>
+      </g>
+
+      {/* === TEXT: 'math' === */}
+      <text 
+        x="200" 
+        y="125" 
+        fontFamily="Arial, sans-serif" 
+        fontWeight="900" 
+        fontSize="110" 
+        fill={mathColor} 
+        letterSpacing="-6"
+      >
+        math
+      </text>
+      
+      {/* === TEXT: 'Technologies' === */}
+      <text 
+        x="205" 
+        y="158" 
+        fontFamily="Arial, sans-serif" 
+        fontWeight="600" 
+        fontSize="34" 
+        fill={techColor} 
+        letterSpacing="3.5"
+      >
+        Technologies
+      </text>
+    </svg>
+  );
+};
 
 // --- 📝 SECTION DATA ---
 const DYNAMIC_TEXTS = [
@@ -209,7 +259,7 @@ const LandingPage = () => {
               >
                 {index === 0 ? (
                     // ✅ SLIDE 0 (Green Background):
-                    // isTwoTone={true} makes 'i', 'Q', and 'math' blue/green.
+                    // isTwoTone={true} makes 'i', 'Q' (Left Blue/Right Green), and 'math' blue.
                     // techOverrideColor="white" forces 'Technologies' to be white.
                     <IQMathLogo isTwoTone={true} techOverrideColor="white" /> 
                 ) : (
