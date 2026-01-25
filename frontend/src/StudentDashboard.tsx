@@ -7,7 +7,7 @@ import {
   LayoutDashboard, BookOpen, Compass, Award, LogOut, 
   CheckCircle, AlertTriangle, X, Save, 
   Code, Play, Monitor, ChevronRight,
-  Menu, Sparkles, Zap, User, PlayCircle, Trophy, Lock, BellRing, Trash2,Settings
+  Menu, Sparkles, Zap, User, PlayCircle, Trophy, Lock, BellRing, Trash2,Settings, Download
 } from "lucide-react";
 import { motion } from "framer-motion";
 
@@ -46,7 +46,7 @@ const StatCard = ({ icon: Icon, label, value }: any) => (
   </motion.div>
 );
 
-const CourseCard = ({ course, type, navigate, handleFreeEnroll, openEnrollModal }: any) => {
+const CourseCard = ({ course, type, navigate, handleFreeEnroll, openEnrollModal, handleDownloadSyllabus }: any) => {
     const getImageUrl = (url: string) => {
         if (!url) return "";
         return url.startsWith('http') ? url : `${API_BASE_URL.replace('/api/v1', '')}/${url}`;
@@ -71,8 +71,26 @@ const CourseCard = ({ course, type, navigate, handleFreeEnroll, openEnrollModal 
                             {course.price === 0 ? <Sparkles size={14} /> : <Lock size={14} />} {course.price === 0 ? "Enroll" : "Unlock"}
                         </button>
                     ) : (
-                        <button onClick={() => navigate(`/course/${course.id}/player`)} className="bg-slate-800 text-white px-4 py-2 rounded-lg font-bold text-sm flex items-center gap-2"><PlayCircle size={14} /> Resume</button>
-                    )}
+    <div className="flex gap-2">
+        {/* ✅ NEW: Download Syllabus Button */}
+        <button 
+            onClick={(e) => {
+                e.stopPropagation(); // Prevent navigating to player
+                // We need to pass a handler function down or define it inline if CourseCard is inside the main component scope.
+                // Since CourseCard is outside, we will pass the handler as a prop.
+                handleDownloadSyllabus(course.id, course.title); 
+            }} 
+            className="bg-white border border-slate-300 text-slate-600 p-2 rounded-lg hover:bg-slate-50 transition-colors"
+            title="Download Syllabus PDF"
+        >
+            <Download size={16} />
+        </button>
+
+        <button onClick={() => navigate(`/course/${course.id}/player`)} className="bg-slate-800 text-white px-4 py-2 rounded-lg font-bold text-sm flex items-center gap-2">
+            <PlayCircle size={14} /> Resume
+        </button>
+    </div>
+)}
                 </div>
             </div>
         </div>
@@ -568,6 +586,29 @@ const StudentDashboard = () => {
           triggerToast("Failed to download certificate. Try again.", "error");
       }
   };
+  
+  // ✅ NEW: Handle Syllabus Download
+  const handleDownloadSyllabus = async (courseId: number, courseTitle: string) => {
+      triggerToast("Downloading syllabus...", "success");
+      try {
+          const response = await axios.get(`${API_BASE_URL}/course-description-pdf/${courseId}`, {
+              headers: { Authorization: `Bearer ${localStorage.getItem("token")}` },
+              responseType: 'blob', // Important for PDF
+          });
+
+          const url = window.URL.createObjectURL(new Blob([response.data]));
+          const link = document.createElement('a');
+          link.href = url;
+          link.setAttribute('download', `${courseTitle.replace(/\s+/g, '_')}_Syllabus.pdf`);
+          document.body.appendChild(link);
+          link.click();
+          link.remove();
+          window.URL.revokeObjectURL(url);
+      } catch (error) {
+          console.error("Download error:", error);
+          triggerToast("Failed to download syllabus.", "error");
+      }
+  };
 
   const openEnrollModal = (course: Course) => { setSelectedCourse(course); setShowModal(true); };
   const handleLogout = () => { localStorage.clear(); navigate("/"); };
@@ -840,7 +881,19 @@ const StudentDashboard = () => {
         )}
        
 
-        {activeTab === "learning" && <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">{enrolledCourses.map(c => <CourseCard key={c.id} course={c} type="enrolled" navigate={navigate} />)}</div>}
+       {activeTab === "learning" && (
+    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        {enrolledCourses.map(c => (
+            <CourseCard 
+                key={c.id} 
+                course={c} 
+                type="enrolled" 
+                navigate={navigate} 
+                handleDownloadSyllabus={handleDownloadSyllabus} // 👈 Pass it here
+            />
+        ))}
+    </div>
+)}
         
         {activeTab === "explore" && <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">{availableCourses.map(c => <CourseCard key={c.id} course={c} type="available" handleFreeEnroll={handleFreeEnroll} openEnrollModal={openEnrollModal} />)}</div>}
         
