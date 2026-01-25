@@ -650,21 +650,38 @@ async def get_course_details(course_id: int, db: AsyncSession = Depends(get_db))
 
 @app.get("/api/v1/code-tests")
 async def get_code_tests(db: AsyncSession = Depends(get_db), current_user: models.User = Depends(get_current_user)):
+    # 1. Instructor View: Show ALL their created tests
     if current_user.role == "instructor": 
         res = await db.execute(select(models.CodeTest).where(models.CodeTest.instructor_id == current_user.id))
         return res.scalars().all()
     
+    # 2. Student View: Show ONLY Pending/Active tests
     res = await db.execute(select(models.CodeTest))
     tests = res.scalars().all()
+    
     response_data = []
+    
     for t in tests:
-        sub_res = await db.execute(select(models.TestResult).where(models.TestResult.test_id == t.id, models.TestResult.user_id == current_user.id))
+        # Check if a result already exists for this student + test
+        sub_res = await db.execute(select(models.TestResult).where(
+            models.TestResult.test_id == t.id, 
+            models.TestResult.user_id == current_user.id
+        ))
         submission = sub_res.scalars().first()
-        # Eager load problems if needed or fetch separately. For summary list, maybe not needed.
-        # But frontend might expect 'problems' list structure? Keeping it lightweight here.
-        response_data.append({ "id": t.id, "title": t.title, "time_limit": t.time_limit, "completed": True if submission else False })
+        
+        # ✅ LOGIC CHANGE: If submission exists (Completed/Terminated), SKIP IT.
+        if submission:
+            continue
+            
+        # If no submission, add to list (Available to take)
+        response_data.append({ 
+            "id": t.id, 
+            "title": t.title, 
+            "time_limit": t.time_limit, 
+            "completed": False 
+        })
+        
     return response_data
-
 @app.post("/api/v1/code-tests/{test_id}/start")
 async def start_code_test(test_id: int, pass_key: str = Form(...), db: AsyncSession = Depends(get_db), current_user: models.User = Depends(get_current_user)):
     # Verify not submitted
