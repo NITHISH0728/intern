@@ -39,24 +39,26 @@ const SLIDES = [
 ];
 
 // --- 🎨 PRECISE BRAND LOGO (EXACT REPLICA) ---
-const IQMathLogo = ({ isTwoTone = false, color = "white" }) => (
+// ✅ UPDATED COMPONENT: Added 'techOverrideColor' prop
+const IQMathLogo = ({ isTwoTone = false, color = "white", techOverrideColor = null }: any) => (
   <svg 
     viewBox="0 0 540 160" 
     className="w-full max-w-[320px] lg:max-w-[440px]"
     xmlns="http://www.w3.org/2000/svg"
   >
     <g transform="translate(10, 20)">
-      {/* Precise 'i' */}
+      {/* Precise 'i' - Blue if two-tone */}
       <circle cx="35" cy="15" r="10" fill={isTwoTone ? BRAND_BLUE : color} />
       <rect x="25" y="32" width="20" height="68" rx="5" fill={isTwoTone ? BRAND_BLUE : color} />
       
-      {/* Precise 'Q' */}
+      {/* Precise 'Q' - Left part Blue if two-tone */}
       <path 
         d="M105 15 A50 50 0 1 0 105 115" 
         stroke={isTwoTone ? BRAND_BLUE : color} 
         strokeWidth="18" 
         fill="none" 
       />
+      {/* Precise 'Q' - Right part Green if two-tone */}
       <path 
         d="M105 15 A50 50 0 0 1 140 105 L 155 125" 
         stroke={isTwoTone ? BRAND_GREEN : color} 
@@ -65,7 +67,7 @@ const IQMathLogo = ({ isTwoTone = false, color = "white" }) => (
         strokeLinecap="round" 
       />
       
-      {/* Circuit Nodes */}
+      {/* Circuit Nodes - Green if two-tone */}
       <g stroke={isTwoTone ? BRAND_GREEN : color} strokeWidth="2.5" fill="none">
         <path d="M85 65 V50 H95" />
         <path d="M105 42 V55" />
@@ -75,8 +77,11 @@ const IQMathLogo = ({ isTwoTone = false, color = "white" }) => (
         <circle cx="122" cy="75" r="5" fill={isTwoTone ? BRAND_GREEN : color} stroke="none" />
       </g>
     </g>
+    {/* 'math' text - Blue if two-tone */}
     <text x="180" y="118" fontFamily="Arial, sans-serif" fontWeight="800" fontSize="105" fill={isTwoTone ? BRAND_BLUE : color} letterSpacing="-5">math</text>
-    <text x="185" y="148" fontFamily="Arial, sans-serif" fontWeight="600" fontSize="34" fill={isTwoTone ? BRAND_GREEN : color} letterSpacing="4">Technologies</text>
+    
+    {/* ✅ UPDATED 'Technologies' text: Uses override color if provided, else defaults to Green if two-tone */}
+    <text x="185" y="148" fontFamily="Arial, sans-serif" fontWeight="600" fontSize="34" fill={techOverrideColor ? techOverrideColor : (isTwoTone ? BRAND_GREEN : color)} letterSpacing="4">Technologies</text>
   </svg>
 );
 
@@ -159,6 +164,7 @@ const LandingPage = () => {
         {/* LEFT CONTENT */}
         <div className="w-full lg:w-[50%] h-full flex flex-col justify-center px-10 lg:px-20 bg-white relative z-20">
           <div className="absolute top-10 left-10 lg:left-20 scale-50 origin-left">
+             {/* Top Left Logo remains standard two-tone */}
              <IQMathLogo isTwoTone={true} />
           </div>
 
@@ -202,8 +208,12 @@ const LandingPage = () => {
                 className="drop-shadow-[0_25px_40px_rgba(0,0,0,0.3)] text-center"
               >
                 {index === 0 ? (
-                    <IQMathLogo isTwoTone={false} color="white" /> 
+                    // ✅ SLIDE 0 (Green Background):
+                    // isTwoTone={true} makes 'i', 'Q', and 'math' blue/green.
+                    // techOverrideColor="white" forces 'Technologies' to be white.
+                    <IQMathLogo isTwoTone={true} techOverrideColor="white" /> 
                 ) : (
+                    // SLIDE 1 (Blue Background): Show Text
                     <div className="text-white">
                         <h1 className="text-7xl font-black tracking-tighter leading-none mb-2">
                             WORLD<br/>CLASS<br/>COURSES
