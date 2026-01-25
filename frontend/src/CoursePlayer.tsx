@@ -902,7 +902,7 @@ const CoursePlayer = () => {
   
   // ✅ 1. NEW STATE FOR PAYWALL
   const [isTrialExpired, setIsTrialExpired] = useState(false);
-
+  const [expiredCourseDetails, setExpiredCourseDetails] = useState<{title: string, price: number} | null>(null);
   const handleEditClick = () => {
       if (!course) return;
       setEditForm({ title: course.title || "", description: course.description || "", price: course.price || 0, image_url: course.image_url || "", language: course.language || "" });
@@ -929,25 +929,39 @@ const CoursePlayer = () => {
 
   const handlePayment = async () => {
     try {
+        // ✅ 1. Get the real price (No hardcoded fallback)
+        const realPrice = course?.price || expiredCourseDetails?.price;
+
+        // 🛑 SAFETY CHECK: If price is missing, stop here.
+        if (!realPrice) {
+            triggerToast("Error: Unable to retrieve course price. Please refresh.", "error");
+            return;
+        }
+
         const orderUrl = `${API_BASE_URL}/create-order`;
-        const { data } = await axios.post(orderUrl, { amount: 599 }); 
+        
+        // ✅ 2. Send the REAL price
+        const { data } = await axios.post(orderUrl, { amount: realPrice }); 
+
         const options = {
             key: "rzp_test_Ru8lDcv8KvAiC0", 
-            amount: data.amount,
+            amount: data.amount, 
             currency: "INR",
             name: "iQmath Pro",
             description: "Lifetime Course Access",
             order_id: data.id, 
             handler: function (response: any) { 
                 triggerToast(`Payment Successful! ID: ${response.razorpay_payment_id}`, "success");
-                // ✅ RELOAD PAGE TO UNLOCK CONTENT
                 setTimeout(() => window.location.reload(), 1500);
             },
             theme: { color: "#87C232" }
         };
         const rzp1 = new (window as any).Razorpay(options);
         rzp1.open();
-    } catch (error) { triggerToast("Payment init failed", "error"); }
+    } catch (error) { 
+        console.error(error);
+        triggerToast("Payment init failed", "error"); 
+    }
   };
 
   useEffect(() => {
@@ -963,9 +977,19 @@ const CoursePlayer = () => {
         }
       } catch (err: any) { 
           console.error(err); 
-          // ✅ 2. CATCH 402 ERROR
+          
           if (err.response?.status === 402) {
               setIsTrialExpired(true);
+              // ✅ NEW: Fetch basic details (title/price) since player API failed
+              // We use the public endpoint or a basic endpoint that doesn't require enrollment check if possible, 
+              // or just the generic /courses/{id} endpoint which usually returns basic info.
+              try {
+                  const token = localStorage.getItem("token");
+                  const basicRes = await axios.get(`${API_BASE_URL}/courses/${courseId}`, { headers: { Authorization: `Bearer ${token}` } });
+                  setExpiredCourseDetails(basicRes.data);
+              } catch (e) {
+                  console.error("Could not fetch course price", e);
+              }
           }
       } finally { setLoading(false); }
     };
@@ -1094,44 +1118,48 @@ const CoursePlayer = () => {
 
   // ✅ 3. PAYWALL VIEW: Renders if trial is expired
   if (isTrialExpired) {
+      // Use the fetched details, or fallbacks if loading failed
+      const displayPrice = expiredCourseDetails?.price || 599;
+      const originalPrice = Math.round(displayPrice * 1.5); // Fake "original" price for effect
+
       return (
-          <div className="h-screen w-screen flex flex-col items-center justify-center bg-slate-50 relative overflow-hidden">
+          <div className="h-screen w-screen flex flex-col items-center justify-center bg-slate-50 relative overflow-hidden font-sans">
               <ToastNotification toast={toast} setToast={setToast} />
               
-              {/* Back Button */}
+              {/* ✅ FIXED BACK BUTTON: Added z-50 to ensure it's on top */}
               <button 
                   onClick={() => navigate("/student-dashboard")} 
-                  className="absolute top-8 left-8 flex items-center gap-2 text-slate-500 hover:text-slate-800 font-bold transition-colors"
+                  className="absolute top-8 left-8 flex items-center gap-2 text-slate-500 hover:text-slate-800 font-bold transition-colors z-50 cursor-pointer"
               >
                   <ArrowLeft size={20} /> Back to Dashboard
               </button>
 
-              <div className="bg-white p-12 rounded-3xl shadow-2xl text-center max-w-lg w-full border border-slate-100 relative z-10 animate-fade-in-up">
-                  <div className="w-24 h-24 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-6">
-                      <LockKeyhole size={48} className="text-red-500" />
+              <div className="bg-white p-10 rounded-3xl shadow-xl text-center max-w-md w-full border border-slate-200 animate-fade-in-up relative z-10">
+                  <div className="w-20 h-20 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-6">
+                      <LockKeyhole size={40} className="text-red-500" />
                   </div>
-                  <h1 className="text-3xl font-extrabold text-slate-900 mb-3">Trial Expired</h1>
-                  <p className="text-slate-500 mb-8 leading-relaxed">
-                      Your 7-day free trial for this course has ended.<br/> 
+                  <h1 className="text-2xl font-extrabold text-slate-900 mb-2">Trial Expired</h1>
+                  <p className="text-slate-500 mb-8 leading-relaxed text-sm">
+                      Your 7-day free trial for <strong>{expiredCourseDetails?.title || "this course"}</strong> has ended.<br/> 
                       Unlock lifetime access to continue learning.
                   </p>
                   
-                  <div className="bg-slate-50 rounded-xl p-4 mb-8 border border-slate-200">
-                      <p className="text-sm font-bold text-slate-400 uppercase tracking-wide mb-1">Total Price</p>
-                      <p className="text-3xl font-extrabold text-slate-900">₹599 <span className="text-lg font-medium text-slate-400 line-through">₹2999</span></p>
+                  <div className="bg-slate-50 rounded-xl p-4 mb-6 border border-slate-100">
+                      <p className="text-xs font-bold text-slate-400 uppercase tracking-wide mb-1">Total Price</p>
+                      {/* ✅ DYNAMIC PRICE */}
+                      <p className="text-3xl font-extrabold text-slate-900">
+                          ₹{displayPrice} <span className="text-lg font-medium text-slate-400 line-through">₹{originalPrice}</span>
+                      </p>
                   </div>
 
                   <button 
                       onClick={handlePayment} 
-                      className="w-full py-4 bg-[#87C232] hover:bg-[#76a82b] text-white rounded-xl font-bold text-lg flex items-center justify-center gap-3 transition-all shadow-lg shadow-green-200 hover:scale-105 active:scale-95"
+                      className="w-full py-3.5 bg-[#87C232] hover:bg-[#76a82b] text-white rounded-xl font-bold text-lg flex items-center justify-center gap-2 transition-all shadow-lg shadow-green-200 hover:scale-105 active:scale-95 cursor-pointer"
                   >
                       <CreditCard size={20} /> Buy Lifetime Access
                   </button>
-                  <p className="text-xs text-slate-400 mt-4">Secure payment via Razorpay</p>
+                  <p className="text-[10px] text-slate-400 mt-4">Secure payment via Razorpay</p>
               </div>
-              
-              {/* Decorative Background Elements */}
-              <div className="absolute top-0 left-0 w-full h-64 bg-gradient-to-b from-blue-50 to-transparent -z-0"></div>
           </div>
       );
   }
