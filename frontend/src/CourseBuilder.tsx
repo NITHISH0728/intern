@@ -655,7 +655,7 @@ const CodingCourseBuilder = () => {
         </div>
 
         <div style={{ display: "flex", gap: "12px" }}>
-            <button onClick={() => navigate(`/dashboard/course/${courseId}/preview`)} style={{ padding: "10px 20px", background: "white", color: "#005EB8", border: "1px solid #005EB8", borderRadius: "8px", fontWeight: "600", cursor: "pointer" }}>Preview & Manage</button>
+            <button onClick={() => navigate(`/dashboard/course/${courseId}/CoursePreview`)} style={{ padding: "10px 20px", background: "white", color: "#005EB8", border: "1px solid #005EB8", borderRadius: "8px", fontWeight: "600", cursor: "pointer" }}>Preview & Manage</button>
             <button onClick={handlePublish} disabled={isPublishing} style={{ padding: "12px 32px", borderRadius: "10px", border: "none", background: brand.green, color: "white", fontWeight: "800", cursor: "pointer" }}>{isPublishing ? "Publishing..." : "Publish Course"}</button>
         </div>
       </header>

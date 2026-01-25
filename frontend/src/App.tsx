@@ -161,7 +161,7 @@ function App() {
           <Route path="assignments" element={<AssignmentManager />} />
           <Route path="add-admits" element={<AddAdmits />} />
           <Route path="course/:courseId/preview" element={<CodingCourseManager />} />
-          <Route path="course/:courseId/preview" element={<CoursePreview />} />
+          <Route path="course/:courseId/CoursePreview" element={<CoursePreview />} />
           <Route path="code-arena" element={<CodeArena />} />
           <Route path="students" element={<StudentManagement />} />
           <Route path="settings" element={<InstructorSettings />} />
