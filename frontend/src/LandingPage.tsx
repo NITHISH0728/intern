@@ -1,11 +1,11 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { motion, AnimatePresence } from "framer-motion"; 
+import { motion, AnimatePresence, type Variants } from "framer-motion"; 
 import { 
   Shield, ArrowRight, Briefcase, ChevronRight, 
-  BookOpen, Infinity, Award, Headset, Users,
-  CheckCircle, Mic, Video, PhoneOff, 
-  Star, MapPin, Mail,  ArrowUp
+  BookOpen, Infinity, Award, Headset, Users, FileText,
+  CheckCircle, Mic, Video, PhoneOff, MoreHorizontal,
+  Star, MapPin, Mail, Phone, ArrowUp
 } from "lucide-react";
 
 // --- 🎨 BRAND CONSTANTS ---
@@ -76,7 +76,7 @@ const IQMathLogo = ({ isTwoTone = false, color = "white" }) => (
       </g>
     </g>
     <text x="180" y="118" fontFamily="Arial, sans-serif" fontWeight="800" fontSize="105" fill={isTwoTone ? BRAND_BLUE : color} letterSpacing="-5">math</text>
-    <text x="185" y="148" fontFamily="Arial, sans-serif" fontWeight="600" fontSize="34" fill={isTwoTone ? BRAND_GREEN : color} letterSpacing="4">Technologies</text>
+    <text x="185" y="148" fontFamily="Arial, sans-serif" fontWeight="600" fontSize="34" fill={isTwoTone ? BRAND_GREEN : color} letterSpacing="4">Build Your Dreams</text>
   </svg>
 );
 
@@ -185,22 +185,45 @@ const LandingPage = () => {
 
         {/* RIGHT VISUAL PANEL */}
         <div className="hidden lg:flex w-[50%] h-full relative items-center justify-center">
+          {/* Skewed Backgrounds */}
           <div className="absolute top-0 bottom-0 -left-28 w-56 bg-white transform skew-x-[-18deg] z-10 shadow-[-20px_0_40px_rgba(0,0,0,0.05)]"></div>
           <motion.div animate={{ backgroundColor: currentSlide.accent }} className="absolute top-0 bottom-0 -left-14 w-4 transform skew-x-[-18deg] z-10 opacity-30" />
           <motion.div key={`bg-${index}`} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.8 }} className={`absolute inset-0 bg-gradient-to-br ${currentSlide.panelGradient}`} />
+          
+          {/* Dynamic Content */}
           <div className="relative z-20">
             <AnimatePresence mode="wait">
-              <motion.div key={`logo-${index}`} initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 1.05, opacity: 0 }} transition={{ duration: 0.5 }} className="drop-shadow-[0_25px_40px_rgba(0,0,0,0.3)]">
-                <IQMathLogo color="white" />
-                <div className="mt-4 text-center">
-                   <div className="h-0.5 w-48 bg-white/40 mx-auto rounded-full mb-4" />
-                   <h3 className="text-white text-3xl font-light tracking-[0.3em] uppercase opacity-90">Technologies</h3>
-                </div>
+              <motion.div 
+                key={`content-${index}`} 
+                initial={{ scale: 0.9, opacity: 0 }} 
+                animate={{ scale: 1, opacity: 1 }} 
+                exit={{ scale: 1.05, opacity: 0 }} 
+                transition={{ duration: 0.5 }} 
+                className="drop-shadow-[0_25px_40px_rgba(0,0,0,0.3)] text-center"
+              >
+                
+                {/* ✅ LOGIC CHANGE: Different content for different slides */}
+                {index === 0 ? (
+                    // Slide 1 (Green): Show Logo with Custom Color
+                    // You asked to change "Technologies" font color. 
+                    // I'm passing 'color="white"' which makes the base text white.
+                    // The component logic uses BRAND_GREEN for "Technologies" if isTwoTone is true.
+                    // To force a specific color, we might need to tweak the SVG component or just pass props.
+                    <IQMathLogo isTwoTone={false} color="white" /> 
+                ) : (
+                    // Slide 2 (Blue): Show "World Class Courses" Text
+                    <div className="text-white">
+                        <h1 className="text-7xl font-black tracking-tighter leading-none mb-2">
+                            WORLD<br/>CLASS<br/>COURSES
+                        </h1>
+                        <div className="h-2 w-32 bg-yellow-400 mx-auto rounded-full mt-6" />
+                    </div>
+                )}
+
               </motion.div>
             </AnimatePresence>
           </div>
         </div>
-      </div>
 
       {/* ================= SECTION 2: FEATURES & VIDEOS ================= */}
       <div className="w-full bg-[#F8FAFC] py-20 px-6 lg:px-24 border-t border-slate-200">
@@ -309,7 +332,7 @@ const LandingPage = () => {
 
       {/* SCROLL TO TOP */}
       <AnimatePresence>{showScrollTop && (<motion.button initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })} className="fixed bottom-8 right-8 p-3 bg-[#005EB8] text-white rounded-full shadow-lg z-50 hover:bg-[#004a94] transition-colors"><ArrowUp size={24} /></motion.button>)}</AnimatePresence>
-
+    </div>
     </div>
   );
 };
