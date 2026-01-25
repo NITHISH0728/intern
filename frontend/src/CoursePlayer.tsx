@@ -239,7 +239,15 @@ const CodingPlayer = ({ course, token }: { course: any, token: string }) => {
     
     // Problem & Execution State
     const [selectedProblem, setSelectedProblem] = useState<any>(null);
-    const [code, setCode] = useState("# Implement function 'solve(input)'\n\ndef solve(x):\n    return x\n");
+    const [code, setCode] = useState(`# Write your solution inside the function below.
+# ⚠️ DO NOT use input() or print(). 
+# ⚠️ RETURN the result instead.
+
+def solve(x):
+    # Your logic here
+    # Example: return x * 2
+    return x
+`);
     const [output, setOutput] = useState("Ready to execute...");
     const [loading, setLoading] = useState(false);
     const [stats, setStats] = useState<{runtime: string, passed: number, total: number, results: any[]} | null>(null);
@@ -394,9 +402,10 @@ const CodingPlayer = ({ course, token }: { course: any, token: string }) => {
                  {/* RIGHT PANEL */}
                  <div className="w-[65%] flex flex-col h-full gap-4">
                      <div className="flex-[2] bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden flex flex-col">
-                        <div className="h-12 border-b border-slate-100 flex items-center px-6 bg-white">
-                            <div className="flex items-center gap-2 text-[#005EB8] font-bold text-sm"><Code size={16} /> Code Editor</div>
-                        </div>
+                       <div className="h-12 border-b border-slate-100 flex items-center justify-between px-6 bg-white">
+    <div className="flex items-center gap-2 text-[#005EB8] font-bold text-sm"><Code size={16} /> Code Editor</div>
+    <span className="text-[10px] text-slate-400 font-medium">⚠️ Use "return", do not use "input()"</span>
+</div>
                         <div className="flex-1 p-2">
                             <Editor height="100%" defaultLanguage={course.language || "python"} theme="light" value={code} onChange={(val) => setCode(val || "")} options={{ minimap: { enabled: false }, fontSize: 15, padding: { top: 20 }, scrollBeyondLastLine: false }} />
                         </div>
