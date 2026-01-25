@@ -7,19 +7,32 @@ import {
   LayoutDashboard, BookOpen, Compass, Award, LogOut, 
   CheckCircle, AlertTriangle, X, Save, 
   Code, Play, Monitor, ChevronRight,
-  Menu, Sparkles, Zap, User, PlayCircle, Trophy, Lock, BellRing, Trash2, Settings, Download, Clock // 👈 Added Clock here
+  Menu, Sparkles, Zap, User, PlayCircle, Trophy, Lock, BellRing, Trash2, Settings, Download, Clock 
 } from "lucide-react";
 import { motion } from "framer-motion";
 
-// ✅ AI IMPORTS (Safe to keep now that structure is fixed)
+// ✅ AI IMPORTS 
 import * as tf from "@tensorflow/tfjs";
 import * as blazeface from "@tensorflow-models/blazeface";
 import "@tensorflow/tfjs-backend-webgl";
 
 // --- TYPES ---
-interface Course { id: number; title: string; description: string; price: number; image_url: string; instructor_id: number; enrollment_type?: "paid" | "trial"; days_left?: number; is_trial_expired?: boolean; has_certificate?: boolean;}interface CodeTest { id: number; title: string; time_limit: number; problems: any[]; completed?: boolean; }
+interface Course { 
+    id: number; 
+    title: string; 
+    description: string; 
+    price: number; 
+    image_url: string; 
+    instructor_id: number; 
+    // ✅ Updated Fields
+    course_type?: string; // "standard" | "coding"
+    enrollment_type?: "paid" | "trial"; 
+    days_left?: number; 
+    is_trial_expired?: boolean; 
+    has_certificate?: boolean;
+}
 
-
+interface CodeTest { id: number; title: string; time_limit: number; problems: any[]; completed?: boolean; }
 
 // --- RAZORPAY SCRIPT LOADER ---
 const loadRazorpayScript = () => {
@@ -32,7 +45,7 @@ const loadRazorpayScript = () => {
     });
 };
 
-// --- 🟢 HELPER COMPONENTS (MOVED OUTSIDE: THE FIX) ---
+// --- 🟢 HELPER COMPONENTS ---
 
 const NavItem = ({ icon, label, active, onClick }: any) => (
   <button 
@@ -176,7 +189,11 @@ const pollResult = async (taskId: string) => {
 
 const StudentDashboard = () => {
   const navigate = useNavigate();
-  const [activeTab, setActiveTab] = useState("home"); 
+  const [activeTab, setActiveTab] = useState("home");
+  
+  // ✅ NEW: Sub-tab for My Learning (Standard vs Coding)
+  const [learningSubTab, setLearningSubTab] = useState("standard");
+
   const [availableCourses, setAvailableCourses] = useState<Course[]>([]);
   const [enrolledCourses, setEnrolledCourses] = useState<Course[]>([]);
   const [loading, setLoading] = useState(true);
@@ -517,9 +534,9 @@ const StudentDashboard = () => {
                    
                    // Handle Runtime Errors gracefully
                    if (fail.status === "Runtime Error" || !fail.input) {
-                        setConsoleOutput(`❌ RUNTIME ERROR (Case ${fail.id + 1})\n\n${fail.error || "Unknown Error"}`);
+                       setConsoleOutput(`❌ RUNTIME ERROR (Case ${fail.id + 1})\n\n${fail.error || "Unknown Error"}`);
                    } else {
-                        setConsoleOutput(`❌ TEST FAILED (Case ${fail.id + 1})\n\nInput:    ${fail.input}\nExpected: ${fail.expected}\nActual:   ${fail.actual}`);
+                       setConsoleOutput(`❌ TEST FAILED (Case ${fail.id + 1})\n\nInput:    ${fail.input}\nExpected: ${fail.expected}\nActual:   ${fail.actual}`);
                    }
                }
           } else {
@@ -882,24 +899,56 @@ const StudentDashboard = () => {
 
         {/* LEARNING TAB */}
         {activeTab === "learning" && (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {enrolledCourses.map(c => (
-                                    <CourseCard 
-                    key={c.id} 
-                    course={c} 
-                    type="enrolled" 
-                    navigate={navigate} 
-                    handleDownloadSyllabus={handleDownloadSyllabus}
-                    onPayClick={(course: Course) => {
-                        // We reuse the modal logic to trigger payment
-                        setSelectedCourse(course);
-                        // Force the modal to show "Paid" view directly? 
-                        // Or simply open the modal. The modal has the "Pay & Unlock Now" button.
-                        setShowModal(true); 
-                    }} 
-                />
-                ))}
-                {enrolledCourses.length === 0 && <div className="col-span-full text-center py-20 text-slate-400">No active courses.</div>}
+            <div>
+                {/* ✅ NEW: Sub-navigation to separate Standard vs Coding courses */}
+                <div className="flex gap-4 mb-6 border-b border-slate-200 pb-2">
+                    <button 
+                        onClick={() => setLearningSubTab("standard")} 
+                        className={`pb-2 text-sm font-bold transition-all ${
+                            learningSubTab === "standard" 
+                            ? "text-[#005EB8] border-b-2 border-[#005EB8]" 
+                            : "text-slate-500 hover:text-slate-800"
+                        }`}
+                    >
+                        Standard Courses
+                    </button>
+                    <button 
+                        onClick={() => setLearningSubTab("coding")} 
+                        className={`pb-2 text-sm font-bold transition-all ${
+                            learningSubTab === "coding" 
+                            ? "text-[#005EB8] border-b-2 border-[#005EB8]" 
+                            : "text-slate-500 hover:text-slate-800"
+                        }`}
+                    >
+                        Coding Courses
+                    </button>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    {/* ✅ Logic: Filter courses based on the selected sub-tab */}
+                    {enrolledCourses
+                        .filter(c => {
+                            if (learningSubTab === "standard") return c.course_type !== "coding";
+                            if (learningSubTab === "coding") return c.course_type === "coding";
+                            return true;
+                        })
+                        .map(c => (
+                            <CourseCard 
+                                key={c.id} 
+                                course={c} 
+                                type="enrolled" 
+                                navigate={navigate} 
+                                handleDownloadSyllabus={handleDownloadSyllabus}
+                                onPayClick={(course: Course) => {
+                                    // Reuse modal logic for payment
+                                    setSelectedCourse(course);
+                                    setShowModal(true); 
+                                }} 
+                            />
+                        ))
+                    }
+                    {enrolledCourses.length === 0 && <div className="col-span-full text-center py-20 text-slate-400">No active courses.</div>}
+                </div>
             </div>
         )}
         

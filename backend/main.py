@@ -950,7 +950,11 @@ async def get_my_courses(db: AsyncSession = Depends(get_db), current_user: model
                 "price": e.course.price,
                 "image_url": e.course.image_url,
                 "instructor_id": e.course.instructor_id,
-                # ✅ NEW FIELDS FOR UI
+                
+                # ✅ ADDED THIS LINE to support Standard/Coding tabs
+                "course_type": e.course.course_type, 
+
+                # UI Status Fields
                 "enrollment_type": e.enrollment_type, # "paid" or "trial"
                 "days_left": days_left,
                 "is_trial_expired": is_trial_expired,
