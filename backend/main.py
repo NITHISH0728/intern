@@ -897,12 +897,40 @@ async def generate_pdf_endpoint(course_id: int, db: AsyncSession = Depends(get_d
 
 @app.get("/api/v1/my-courses")
 async def get_my_courses(db: AsyncSession = Depends(get_db), current_user: models.User = Depends(get_current_user)):
-    res = await db.execute(select(models.Enrollment).options(selectinload(models.Enrollment.course)).where(models.Enrollment.user_id == current_user.id))
+    # 1. Fetch enrollments with course details AND certificates
+    # We need to fetch certificates separately or join them. A separate query is cleaner here.
+    
+    # Fetch enrollments + courses
+    res = await db.execute(
+        select(models.Enrollment)
+        .options(selectinload(models.Enrollment.course))
+        .where(models.Enrollment.user_id == current_user.id)
+    )
     enrollments = res.scalars().all()
     
-    # 🟢 FIX: Filter out None values if a course was deleted
-    valid_courses = [e.course for e in enrollments if e.course is not None]
-    
+    # Fetch all certificates for this user
+    cert_res = await db.execute(
+        select(models.UserCertificate.course_id)
+        .where(models.UserCertificate.user_id == current_user.id)
+    )
+    earned_cert_ids = set(cert_res.scalars().all())
+
+    # 2. Build the response list with the extra flag
+    valid_courses = []
+    for e in enrollments:
+        if e.course:
+            # Convert SQLAlchemy model to dict so we can add a custom field
+            course_data = {
+                "id": e.course.id,
+                "title": e.course.title,
+                "description": e.course.description,
+                "price": e.course.price,
+                "image_url": e.course.image_url,
+                "instructor_id": e.course.instructor_id,
+                "has_certificate": e.course.id in earned_cert_ids # 👈 NEW FLAG
+            }
+            valid_courses.append(course_data)
+
     return valid_courses
 
 @app.post("/api/v1/user/change-password")

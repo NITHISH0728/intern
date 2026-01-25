@@ -17,8 +17,7 @@ import * as blazeface from "@tensorflow-models/blazeface";
 import "@tensorflow/tfjs-backend-webgl";
 
 // --- TYPES ---
-interface Course { id: number; title: string; description: string; price: number; image_url: string; instructor_id: number; }
-interface CodeTest { id: number; title: string; time_limit: number; problems: any[]; completed?: boolean; }
+interface Course { id: number; title: string; description: string; price: number; image_url: string; instructor_id: number; has_certificate?: boolean;}interface CodeTest { id: number; title: string; time_limit: number; problems: any[]; completed?: boolean; }
 
 // --- RAZORPAY SCRIPT LOADER ---
 const loadRazorpayScript = () => {
@@ -869,19 +868,31 @@ const StudentDashboard = () => {
         {/* CERTIFICATES TAB */}
         {activeTab === "certificates" && (
             <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="flex flex-col gap-6">
-                <div className="bg-gradient-to-r from-yellow-50 to-orange-50 p-8 rounded-2xl border border-yellow-100 text-center">
-                    <div className="w-16 h-16 bg-yellow-100 text-yellow-600 rounded-full flex items-center justify-center mx-auto mb-4"><Award size={32} /></div>
-                    <h2 className="text-xl font-extrabold text-slate-800 mb-2">Your Achievements</h2>
-                    <p className="text-slate-500 text-sm max-w-md mx-auto">Certificates are awarded upon 100% completion.</p>
-                </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     {enrolledCourses.map(course => (
                         <div key={course.id} className="bg-white p-6 rounded-xl border border-slate-200 hover:shadow-md transition-all flex items-center justify-between">
                             <div className="flex items-center gap-4">
-                                <div className="h-12 w-12 bg-slate-100 rounded-lg flex items-center justify-center text-slate-400"><Award size={24} /></div>
-                                <div><h4 className="font-bold text-slate-800">{course.title}</h4><span className="text-[10px] font-bold text-green-600 bg-green-50 px-2 py-0.5 rounded mt-1 inline-block">COMPLETED</span></div>
+                                <div className={`h-12 w-12 rounded-lg flex items-center justify-center ${course.has_certificate ? "bg-green-100 text-green-600" : "bg-red-100 text-red-500"}`}>
+                                    {course.has_certificate ? <Award size={24} /> : <Lock size={24} />}
+                                </div>
+                                <div>
+                                    <h4 className="font-bold text-slate-800">{course.title}</h4>
+                                    {course.has_certificate ? (
+                                        <span className="text-[10px] font-bold text-green-600 bg-green-50 px-2 py-0.5 rounded mt-1 inline-block">COMPLETED</span>
+                                    ) : (
+                                        <span className="text-[10px] font-bold text-red-600 bg-red-50 px-2 py-0.5 rounded mt-1 inline-block">INCOMPLETE</span>
+                                    )}
+                                </div>
                             </div>
-                            <button onClick={() => handleDownloadCertificate(course.id, course.title)} className="text-[#005EB8] hover:bg-blue-50 p-2 rounded-lg transition-colors"><Download size={20} /></button>
+                            
+                            <button 
+                                onClick={() => course.has_certificate ? handleDownloadCertificate(course.id, course.title) : triggerToast("Complete the course first!", "error")}
+                                disabled={!course.has_certificate}
+                                className={`p-2 rounded-lg transition-colors ${course.has_certificate ? "text-[#005EB8] hover:bg-blue-50 cursor-pointer" : "text-slate-300 cursor-not-allowed"}`}
+                                title={course.has_certificate ? "Download Certificate" : "Locked: Complete Course First"}
+                            >
+                                <Download size={20} />
+                            </button>
                         </div>
                     ))}
                 </div>
