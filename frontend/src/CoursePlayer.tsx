@@ -96,7 +96,15 @@ const CodeCompiler = ({ lesson }: { lesson: any }) => {
       title: "No Problem Configured", description: "Please ask the instructor to update this test.", testCases: [] 
   };
 
-  const [code, setCode] = useState("# Write your solution here...\n\ndef solve(x):\n    return x\n");
+  const [code, setCode] = useState(`# Write your solution inside the function below.
+# ⚠️ DO NOT use input() or print(). 
+# ⚠️ RETURN the result instead.
+
+def solve(x):
+    # Your logic here
+    # Example: return x * 2
+    return x
+`);
   const [output, setOutput] = useState("Ready to execute...");
   const [loading, setLoading] = useState(false);
   const [language, setLanguage] = useState(71); 

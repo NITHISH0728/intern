@@ -15,7 +15,15 @@ export const CodeTestPreview = ({ lesson }: { lesson: any }) => {
   const config = lesson.test_config ? (typeof lesson.test_config === "string" ? JSON.parse(lesson.test_config) : lesson.test_config) : { difficulty: "Easy", timeLimit: 1000, testCases: [] };
   
   // State
-  const [code, setCode] = useState("// Write your code here (Node.js)...\n// Use console.log() to print output\n\nfunction solution(input) {\n  const [a, b] = input.split(' ');\n  console.log(parseInt(a) + parseInt(b));\n}\n\n// Reading stdin for Judge0\nconst fs = require('fs');\nconst input = fs.readFileSync(0, 'utf-8');\nif (input) solution(input);");
+  const [code, setCode] = useState(`# Write your solution inside the function below.
+# ⚠️ DO NOT use input() or print(). 
+# ⚠️ RETURN the result instead.
+
+def solve(x):
+    # Your logic here
+    # Example: return x * 2
+    return x
+`);
   const [consoleOutput, setConsoleOutput] = useState("Output will appear here after running your code...");
   const [activeTab, setActiveTab] = useState<"input" | "expected">("input");
   
