@@ -7,7 +7,7 @@ import {
   LayoutDashboard, BookOpen, Compass, Award, LogOut, 
   CheckCircle, AlertTriangle, X, Save, 
   Code, Play, Monitor, ChevronRight,
-  Menu, Sparkles, Zap, User, PlayCircle, Trophy, Lock, BellRing, Trash2,Settings, Download
+  Menu, Sparkles, Zap, User, PlayCircle, Trophy, Lock, BellRing, Trash2, Settings, Download, Clock // 👈 Added Clock here
 } from "lucide-react";
 import { motion } from "framer-motion";
 
@@ -17,7 +17,9 @@ import * as blazeface from "@tensorflow-models/blazeface";
 import "@tensorflow/tfjs-backend-webgl";
 
 // --- TYPES ---
-interface Course { id: number; title: string; description: string; price: number; image_url: string; instructor_id: number; has_certificate?: boolean;}interface CodeTest { id: number; title: string; time_limit: number; problems: any[]; completed?: boolean; }
+interface Course { id: number; title: string; description: string; price: number; image_url: string; instructor_id: number; enrollment_type?: "paid" | "trial"; days_left?: number; is_trial_expired?: boolean; has_certificate?: boolean;}interface CodeTest { id: number; title: string; time_limit: number; problems: any[]; completed?: boolean; }
+
+
 
 // --- RAZORPAY SCRIPT LOADER ---
 const loadRazorpayScript = () => {
@@ -52,51 +54,93 @@ const StatCard = ({ icon: Icon, label, value }: any) => (
   </motion.div>
 );
 
-const CourseCard = ({ course, type, navigate, handleFreeEnroll, openEnrollModal, handleDownloadSyllabus }: any) => {
+const CourseCard = ({ course, type, navigate, handleFreeEnroll, openEnrollModal, handleDownloadSyllabus, onPayClick }: any) => {
     const getImageUrl = (url: string) => {
         if (!url) return "";
         return url.startsWith('http') ? url : `${API_BASE_URL.replace('/api/v1', '')}/${url}`;
     };
 
     return (
-        <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden hover:-translate-y-1 hover:shadow-lg transition-all">
+        <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden hover:-translate-y-1 hover:shadow-lg transition-all relative group">
+            
+            {/* ✅ 1. COMPLETED RIBBON */}
+            {course.has_certificate && (
+                <div className="absolute top-4 -right-12 bg-yellow-400 text-yellow-900 text-[10px] font-extrabold px-12 py-1 rotate-45 z-20 shadow-md">
+                    COMPLETED
+                </div>
+            )}
+
             <div className="h-40 bg-slate-200 relative flex items-center justify-center">
                 {course.image_url ? (
                     <img src={getImageUrl(course.image_url)} alt={course.title} className="w-full h-full object-cover" />
                 ) : (
                     <BookOpen size={40} className="text-slate-400" />
                 )}
-                {type === "enrolled" && <div className="absolute top-2 right-2 bg-[#87C232] text-white px-2 py-1 rounded-full text-[10px] font-bold">ACTIVE</div>}
+                
+                {/* Status Badges */}
+                {type === "enrolled" && (
+                    <div className="absolute top-2 left-2 flex gap-2">
+                         {course.enrollment_type === "paid" ? (
+                             <div className="bg-green-600 text-white px-2 py-1 rounded-md text-[10px] font-bold flex items-center gap-1 shadow-sm">
+                                 <CheckCircle size={10} /> PAID
+                             </div>
+                         ) : (
+                             <div className={`px-2 py-1 rounded-md text-[10px] font-bold flex items-center gap-1 shadow-sm ${course.is_trial_expired ? "bg-red-600 text-white" : "bg-orange-500 text-white"}`}>
+                                 <Clock size={10} /> {course.is_trial_expired ? "TRIAL ENDED" : `${course.days_left} DAYS LEFT`}
+                             </div>
+                         )}
+                    </div>
+                )}
             </div>
+
             <div className="p-5">
-                <h4 className="font-bold text-slate-800 mb-4">{course.title}</h4>
+                <h4 className="font-bold text-slate-800 mb-4 truncate" title={course.title}>{course.title}</h4>
+                
                 <div className="flex justify-between items-center">
-                    <span className={`text-lg font-extrabold ${course.price === 0 ? "text-[#87C232]" : "text-[#005EB8]"}`}>{course.price === 0 ? "Free" : `₹${course.price}`}</span>
+                    {/* ✅ 2. DYNAMIC PRICE / STATUS DISPLAY */}
+                    {type === "enrolled" ? (
+                        <div className="flex items-center gap-2">
+                             {course.enrollment_type === "trial" ? (
+                                 <button 
+                                    onClick={(e) => { e.stopPropagation(); onPayClick(course); }}
+                                    className="bg-green-100 text-green-700 px-3 py-1.5 rounded-lg text-xs font-bold hover:bg-green-200 transition-colors border border-green-200 animate-pulse"
+                                 >
+                                    Pay ₹{course.price}
+                                 </button>
+                             ) : (
+                                 <span className="text-sm font-bold text-slate-400">Lifetime Access</span>
+                             )}
+                        </div>
+                    ) : (
+                        <span className={`text-lg font-extrabold ${course.price === 0 ? "text-[#87C232]" : "text-[#005EB8]"}`}>
+                            {course.price === 0 ? "Free" : `₹${course.price}`}
+                        </span>
+                    )}
+
+                    {/* ✅ 3. ACTION BUTTONS */}
                     {type === "available" ? (
                         <button onClick={() => course.price === 0 ? handleFreeEnroll(course.id) : openEnrollModal(course)} className={`px-4 py-2 rounded-lg text-white font-bold text-sm flex items-center gap-2 ${course.price === 0 ? "bg-[#87C232]" : "bg-[#005EB8]"}`}>
                             {course.price === 0 ? <Sparkles size={14} /> : <Lock size={14} />} {course.price === 0 ? "Enroll" : "Unlock"}
                         </button>
                     ) : (
-    <div className="flex gap-2">
-        {/* ✅ NEW: Download Syllabus Button */}
-        <button 
-            onClick={(e) => {
-                e.stopPropagation(); // Prevent navigating to player
-                // We need to pass a handler function down or define it inline if CourseCard is inside the main component scope.
-                // Since CourseCard is outside, we will pass the handler as a prop.
-                handleDownloadSyllabus(course.id, course.title); 
-            }} 
-            className="bg-white border border-slate-300 text-slate-600 p-2 rounded-lg hover:bg-slate-50 transition-colors"
-            title="Download Syllabus PDF"
-        >
-            <Download size={16} />
-        </button>
+                        <div className="flex gap-2">
+                             <button 
+                                onClick={(e) => { e.stopPropagation(); handleDownloadSyllabus(course.id, course.title); }} 
+                                className="bg-white border border-slate-300 text-slate-600 p-2 rounded-lg hover:bg-slate-50 transition-colors"
+                                title="Download Syllabus"
+                            >
+                                <Download size={16} />
+                            </button>
 
-        <button onClick={() => navigate(`/course/${course.id}/player`)} className="bg-slate-800 text-white px-4 py-2 rounded-lg font-bold text-sm flex items-center gap-2">
-            <PlayCircle size={14} /> Resume
-        </button>
-    </div>
-)}
+                            <button 
+                                onClick={() => navigate(`/course/${course.id}/player`)} 
+                                disabled={course.is_trial_expired} // 🚫 Disable if trial expired
+                                className={`px-4 py-2 rounded-lg font-bold text-sm flex items-center gap-2 transition-colors ${course.is_trial_expired ? "bg-slate-300 text-slate-500 cursor-not-allowed" : "bg-slate-800 text-white hover:bg-slate-900"}`}
+                            >
+                                <PlayCircle size={14} /> {course.is_trial_expired ? "Locked" : "Resume"}
+                            </button>
+                        </div>
+                    )}
                 </div>
             </div>
         </div>
@@ -840,7 +884,20 @@ const StudentDashboard = () => {
         {activeTab === "learning" && (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 {enrolledCourses.map(c => (
-                    <CourseCard key={c.id} course={c} type="enrolled" navigate={navigate} handleDownloadSyllabus={handleDownloadSyllabus} />
+                                    <CourseCard 
+                    key={c.id} 
+                    course={c} 
+                    type="enrolled" 
+                    navigate={navigate} 
+                    handleDownloadSyllabus={handleDownloadSyllabus}
+                    onPayClick={(course: Course) => {
+                        // We reuse the modal logic to trigger payment
+                        setSelectedCourse(course);
+                        // Force the modal to show "Paid" view directly? 
+                        // Or simply open the modal. The modal has the "Pay & Unlock Now" button.
+                        setShowModal(true); 
+                    }} 
+                />
                 ))}
                 {enrolledCourses.length === 0 && <div className="col-span-full text-center py-20 text-slate-400">No active courses.</div>}
             </div>

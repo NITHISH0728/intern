@@ -915,9 +915,6 @@ async def generate_pdf_endpoint(course_id: int, db: AsyncSession = Depends(get_d
 @app.get("/api/v1/my-courses")
 async def get_my_courses(db: AsyncSession = Depends(get_db), current_user: models.User = Depends(get_current_user)):
     # 1. Fetch enrollments with course details AND certificates
-    # We need to fetch certificates separately or join them. A separate query is cleaner here.
-    
-    # Fetch enrollments + courses
     res = await db.execute(
         select(models.Enrollment)
         .options(selectinload(models.Enrollment.course))
@@ -925,18 +922,27 @@ async def get_my_courses(db: AsyncSession = Depends(get_db), current_user: model
     )
     enrollments = res.scalars().all()
     
-    # Fetch all certificates for this user
+    # 2. Fetch earned certificates for ribbon logic
     cert_res = await db.execute(
         select(models.UserCertificate.course_id)
         .where(models.UserCertificate.user_id == current_user.id)
     )
     earned_cert_ids = set(cert_res.scalars().all())
 
-    # 2. Build the response list with the extra flag
+    # 3. Build response with enrollment status
     valid_courses = []
     for e in enrollments:
         if e.course:
-            # Convert SQLAlchemy model to dict so we can add a custom field
+            # Calculate Trial Status
+            days_left = 0
+            is_trial_expired = False
+            
+            if e.enrollment_type == "trial" and e.expiry_date:
+                delta = e.expiry_date - datetime.utcnow()
+                days_left = max(0, delta.days)
+                if delta.total_seconds() <= 0:
+                    is_trial_expired = True
+
             course_data = {
                 "id": e.course.id,
                 "title": e.course.title,
@@ -944,7 +950,11 @@ async def get_my_courses(db: AsyncSession = Depends(get_db), current_user: model
                 "price": e.course.price,
                 "image_url": e.course.image_url,
                 "instructor_id": e.course.instructor_id,
-                "has_certificate": e.course.id in earned_cert_ids # 👈 NEW FLAG
+                # ✅ NEW FIELDS FOR UI
+                "enrollment_type": e.enrollment_type, # "paid" or "trial"
+                "days_left": days_left,
+                "is_trial_expired": is_trial_expired,
+                "has_certificate": e.course.id in earned_cert_ids
             }
             valid_courses.append(course_data)
 
