@@ -1127,6 +1127,21 @@ async def delete_student(user_id: int, db: AsyncSession = Depends(get_db), curre
     
     return {"message": "Student deactivated successfully. Data has been archived safely."}
 
+# --- 🆕 ADD THIS TO main.py ---
+@app.patch("/api/v1/admin/students/{user_id}/reset-password")
+async def reset_student_password(user_id: int, req: PasswordChange, db: AsyncSession = Depends(get_db), current_user: models.User = Depends(require_instructor)):
+    # 1. Find Student
+    result = await db.execute(select(models.User).where(models.User.id == user_id))
+    student = result.scalars().first()
+    
+    if not student: 
+        raise HTTPException(status_code=404, detail="Student not found")
+    
+    # 2. Reset Password
+    student.hashed_password = get_password_hash(req.new_password)
+    await db.commit()
+    
+    return {"message": f"Password for {student.full_name} has been reset."}
 
 @app.delete("/api/v1/courses/{course_id}")
 async def delete_course(course_id: int, db: AsyncSession = Depends(get_db), current_user: models.User = Depends(require_instructor)):

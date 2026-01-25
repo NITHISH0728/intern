@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import axios from "axios";
 import API_BASE_URL from './config';
-import { Trash2, User, Search, AlertCircle, X, Calendar,  CheckCircle, AlertTriangle } from "lucide-react"; // ✅ Added Icons
+import { Trash2, User, Search, AlertCircle, X, Calendar, CheckCircle, AlertTriangle, RefreshCw, Key } from "lucide-react"; // ✅ Added Icons
 
 interface Student {
   id: number;
@@ -18,6 +18,10 @@ const StudentManagement = () => {
   
   // Delete Modal State
   const [studentToDelete, setStudentToDelete] = useState<Student | null>(null);
+
+  // ✅ NEW: Reset Password State
+  const [resetModal, setResetModal] = useState<{id: number, name: string} | null>(null);
+  const [newPass, setNewPass] = useState("");
 
   // ✅ NEW: Toast State
   const [toast, setToast] = useState<{ show: boolean; message: string; type: "success" | "error" }>({ 
@@ -48,9 +52,9 @@ const StudentManagement = () => {
   const fetchStudents = async () => {
     try {
       const token = localStorage.getItem("token");
-     const res = await axios.get(`${API_BASE_URL}/admin/students`, {
-    headers: { Authorization: `Bearer ${token}` }
-});
+      const res = await axios.get(`${API_BASE_URL}/admin/students`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
       setStudents(res.data);
     } catch (err) {
       console.error("Failed to load students", err);
@@ -68,16 +72,31 @@ const StudentManagement = () => {
     try {
       const token = localStorage.getItem("token");
       await axios.delete(`${API_BASE_URL}/admin/students/${studentToDelete.id}`, {
-    headers: { Authorization: `Bearer ${token}` }
-});
+        headers: { Authorization: `Bearer ${token}` }
+      });
       setStudents(students.filter(s => s.id !== studentToDelete.id));
       setStudentToDelete(null);
       
-      // ✅ REPLACED ALERT WITH TOAST
       triggerToast("Student removed successfully.", "success");
     } catch (err) {
-      // ✅ REPLACED ALERT WITH TOAST
       triggerToast("Failed to remove student.", "error");
+    }
+  };
+
+  // ✅ NEW: Handle Password Reset
+  const handleResetPassword = async () => {
+    if (!resetModal || !newPass) return;
+    try {
+      const token = localStorage.getItem("token");
+      await axios.patch(`${API_BASE_URL}/admin/students/${resetModal.id}/reset-password`, 
+        { new_password: newPass },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      triggerToast("Password reset successfully!", "success");
+      setResetModal(null);
+      setNewPass("");
+    } catch (err) {
+      triggerToast("Failed to reset password.", "error");
     }
   };
 
@@ -119,15 +138,17 @@ const StudentManagement = () => {
             <tr style={{ borderBottom: `1px solid ${brand.border}`, color: brand.textLight, fontSize: "12px", textTransform: "uppercase" }}>
               <th style={{ padding: "20px", fontWeight: "700" }}>Student Name</th>
               <th style={{ padding: "20px", fontWeight: "700" }}>Joined Date</th>
+              {/* ✅ NEW: Password Column Header */}
+              <th style={{ padding: "20px", fontWeight: "700" }}>Password</th>
               <th style={{ padding: "20px", fontWeight: "700" }}>Enrolled Courses</th>
               <th style={{ padding: "20px", fontWeight: "700", textAlign: "right" }}>Actions</th>
             </tr>
           </thead>
           <tbody>
             {loading ? (
-              <tr><td colSpan={4} style={{ padding: "40px", textAlign: "center", color: brand.textLight }}>Loading data...</td></tr>
+              <tr><td colSpan={5} style={{ padding: "40px", textAlign: "center", color: brand.textLight }}>Loading data...</td></tr>
             ) : filteredStudents.length === 0 ? (
-              <tr><td colSpan={4} style={{ padding: "40px", textAlign: "center", color: brand.textLight }}>No students found.</td></tr>
+              <tr><td colSpan={5} style={{ padding: "40px", textAlign: "center", color: brand.textLight }}>No students found.</td></tr>
             ) : (
               filteredStudents.map(student => (
                 <tr key={student.id} style={{ borderBottom: `1px solid ${brand.border}`, background: "white", transition: "background 0.2s" }} onMouseOver={(e) => e.currentTarget.style.background = "#f8fafc"} onMouseOut={(e) => e.currentTarget.style.background = "white"}>
@@ -147,6 +168,21 @@ const StudentManagement = () => {
                       <Calendar size={14} /> {student.joined_at || "N/A"}
                     </div>
                   </td>
+                  
+                  {/* ✅ NEW: Password Reset Cell */}
+                  <td style={{ padding: "20px" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                        <span style={{ color: brand.textLight, fontSize: "18px", letterSpacing: "2px", lineHeight: "0" }}>••••••</span>
+                        <button 
+                            onClick={() => setResetModal({ id: student.id, name: student.full_name })}
+                            style={{ padding: "6px", background: "#f0f9ff", color: brand.blue, border: `1px solid ${brand.border}`, borderRadius: "6px", cursor: "pointer" }}
+                            title="Reset Password"
+                        >
+                            <RefreshCw size={14} />
+                        </button>
+                    </div>
+                  </td>
+
                   <td style={{ padding: "20px" }}>
                     <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
                       {student.enrolled_courses.length > 0 ? student.enrolled_courses.map((c, i) => (
@@ -186,6 +222,34 @@ const StudentManagement = () => {
             <div style={{ display: "flex", gap: "12px" }}>
               <button onClick={() => setStudentToDelete(null)} style={{ flex: 1, padding: "12px", background: "white", border: `1px solid ${brand.border}`, borderRadius: "8px", fontWeight: "700", color: brand.textLight, cursor: "pointer" }}>Cancel</button>
               <button onClick={handleDelete} style={{ flex: 1, padding: "12px", background: brand.danger, border: "none", borderRadius: "8px", fontWeight: "700", color: "white", cursor: "pointer" }}>Yes, Remove</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ✅ NEW: RESET PASSWORD MODAL */}
+      {resetModal && (
+        <div style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, background: "rgba(15, 23, 42, 0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 100, backdropFilter: "blur(2px)" }}>
+          <div style={{ background: "white", padding: "30px", borderRadius: "16px", width: "400px", boxShadow: "0 20px 25px -5px rgba(0,0,0,0.1)", textAlign: "center" }}>
+            <div style={{ width: "50px", height: "50px", background: "#f0f9ff", borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 20px auto" }}>
+              <Key size={24} color={brand.blue} />
+            </div>
+            <h3 style={{ margin: "0 0 10px 0", color: brand.textMain, fontSize: "20px", fontWeight: "800" }}>Reset Password</h3>
+            <p style={{ color: brand.textLight, fontSize: "14px", marginBottom: "20px" }}>
+              Set a new password for <strong>{resetModal.name}</strong>.
+            </p>
+            
+            <input 
+                type="text" 
+                placeholder="Enter new password..." 
+                value={newPass}
+                onChange={(e) => setNewPass(e.target.value)}
+                style={{ width: "100%", padding: "12px", borderRadius: "8px", border: `2px solid ${brand.border}`, marginBottom: "20px", outline: "none", fontWeight: "bold", color: brand.textMain }}
+            />
+
+            <div style={{ display: "flex", gap: "12px" }}>
+              <button onClick={() => { setResetModal(null); setNewPass(""); }} style={{ flex: 1, padding: "12px", background: "white", border: `1px solid ${brand.border}`, borderRadius: "8px", fontWeight: "700", color: brand.textLight, cursor: "pointer" }}>Cancel</button>
+              <button onClick={handleResetPassword} disabled={!newPass} style={{ flex: 1, padding: "12px", background: brand.blue, border: "none", borderRadius: "8px", fontWeight: "700", color: "white", cursor: "pointer", opacity: newPass ? 1 : 0.7 }}>Update</button>
             </div>
           </div>
         </div>
