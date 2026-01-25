@@ -992,9 +992,13 @@ const StudentDashboard = () => {
                     <button onClick={() => handleEnrollStrategy("paid")} disabled={processing} className="w-full py-3 rounded-lg bg-[#005EB8] hover:bg-blue-700 text-white font-bold shadow-lg shadow-blue-500/30 transition-all flex items-center justify-center gap-2">
                         {processing ? "Processing..." : <><Lock size={16} /> Pay & Unlock Now</>}
                     </button>
-                    <button onClick={() => handleEnrollStrategy("trial")} disabled={processing} className="w-full py-3 rounded-lg bg-white border border-slate-300 text-slate-600 font-bold hover:bg-slate-50 transition-all text-sm">
-                        Start 7-Day Free Trial
-                    </button>
+                    
+                    {/* ✅ FIX: Hide trial button if user is already on a trial */}
+                    {selectedCourse.enrollment_type !== "trial" && (
+                        <button onClick={() => handleEnrollStrategy("trial")} disabled={processing} className="w-full py-3 rounded-lg bg-white border border-slate-300 text-slate-600 font-bold hover:bg-slate-50 transition-all text-sm">
+                            Start 7-Day Free Trial
+                        </button>
+                    )}
                 </div>
             </div>
           </motion.div>
