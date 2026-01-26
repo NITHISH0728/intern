@@ -14,7 +14,9 @@ import { motion } from "framer-motion";
 // ✅ AI IMPORTS 
 import * as tf from "@tensorflow/tfjs";
 import * as blazeface from "@tensorflow-models/blazeface";
+
 import "@tensorflow/tfjs-backend-webgl";
+import BrandLogo from "./components/BrandLogo";
 
 // --- TYPES ---
 interface Course {
@@ -771,7 +773,7 @@ const StudentDashboard = () => {
                     <button onClick={() => setIsMobileMenuOpen(true)} className="lg:hidden text-slate-600 hover:text-[#005EB8]">
                         <Menu size={24} />
                     </button>
-                    <span className="text-xl lg:text-2xl font-extrabold text-[#005EB8] tracking-tight">iQmath<span className="text-[#87C232]">Pro</span></span>
+                    <BrandLogo size="md" showTagline />
                 </div>
 
                 {/* Center: Desktop Navigation Menu */}

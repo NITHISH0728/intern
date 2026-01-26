@@ -7,6 +7,7 @@ import {
   ShieldCheck, Eye, EyeOff,
   Smartphone, MessageSquare, AlertCircle, X
 } from "lucide-react";
+import BrandLogo from "./components/BrandLogo";
 
 // 🔥 FIREBASE IMPORTS
 import { initializeApp } from "firebase/app";
@@ -251,7 +252,7 @@ const Login = () => {
              ${isSignUp ? 'hidden lg:flex lg:translate-x-full lg:opacity-0 lg:pointer-events-none' : 'flex w-full h-full lg:opacity-100'}
         `}>
           <form onSubmit={handleAuth} className="bg-[#F8FAFC] flex flex-col items-center justify-center w-full h-full px-8 py-10 lg:px-12 text-center">
-            <div className="mb-4"><h1 className={`text-3xl font-extrabold ${activeText} tracking-tight`}>iQmath</h1></div>
+            <div className="mb-4"><BrandLogo size="xl" showTagline /></div>
             <h1 className="text-2xl font-bold text-slate-800 mb-1">Learner Login</h1>
             <p className="text-slate-400 text-sm mb-6">Enter your details to access your courses</p>
 

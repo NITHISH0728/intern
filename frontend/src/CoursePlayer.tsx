@@ -1047,6 +1047,7 @@ const CoursePlayer = () => {
             const formData = new FormData();
             formData.append("file", assignmentFile);
             formData.append("lesson_title", activeLesson.title);
+            formData.append("lesson_id", activeLesson.id);
             await axios.post(`${API_BASE_URL}/submit-assignment`, formData, {
                 headers: { "Authorization": `Bearer ${token}` },
                 onUploadProgress: (progressEvent) => { if (progressEvent.total) { const percent = Math.round((progressEvent.loaded * 100) / progressEvent.total); console.log(`Uploading: ${percent}%`); } }
@@ -1108,26 +1109,45 @@ const CoursePlayer = () => {
             contentBody = (
                 <div className="flex flex-col items-center justify-center h-full bg-[#F8FAFC] p-8 font-sans text-slate-800">
                     <div className="bg-white p-10 rounded-2xl shadow-xl max-w-2xl w-full text-center border border-slate-100">
-                        <div className="w-20 h-20 bg-blue-50 rounded-full flex items-center justify-center mx-auto mb-6"><UploadCloud size={40} className="text-[#005EB8]" /></div>
-                        <h2 className="text-2xl font-bold text-slate-800 mb-2">{activeLesson.title}</h2>
-                        {activeLesson.is_mandatory && (<span className="inline-block bg-red-100 text-red-600 text-xs font-bold px-3 py-1 rounded-full mb-4">MANDATORY SUBMISSION</span>)}
-                        <p className="text-slate-600 mb-8 leading-relaxed whitespace-pre-wrap text-sm">{activeLesson.instructions || activeLesson.description || "Upload your assignment below."}</p>
-                        <div className="mb-8">
-                            {!assignmentFile ? (
-                                <div className="border-2 border-dashed border-slate-300 rounded-xl p-8 bg-slate-50 hover:bg-slate-100 transition-all cursor-pointer relative group">
-                                    <input type="file" className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10" onChange={(e) => setAssignmentFile(e.target.files?.[0] || null)} accept=".pdf,.doc,.docx,.zip" />
-                                    <div className="flex flex-col items-center gap-3 group-hover:scale-105 transition-transform"><UploadCloud size={32} className="text-slate-400 group-hover:text-[#005EB8]" /><div><p className="text-slate-700 font-bold text-sm">Click to upload or drag and drop</p><p className="text-slate-400 text-xs mt-1">Maximum file size 10MB</p></div></div>
+                        {activeLesson.is_completed ? (
+                            <div className="flex flex-col items-center animate-fade-in-up">
+                                <div className="w-24 h-24 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-6">
+                                    <CheckCircle size={48} className="text-green-600" />
                                 </div>
-                            ) : (
-                                <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 flex items-center justify-between">
-                                    <div className="flex items-center gap-4"><div className="bg-white p-2 rounded-lg border border-blue-100 text-[#005EB8]"><FileIcon size={24} /></div><div className="text-left"><p className="text-slate-800 font-bold text-sm truncate max-w-[200px]">{assignmentFile.name}</p><p className="text-slate-500 text-xs">{(assignmentFile.size / 1024 / 1024).toFixed(2)} MB</p></div></div>
-                                    <button onClick={() => setAssignmentFile(null)} className="p-2 hover:bg-white rounded-full transition-colors text-slate-400 hover:text-red-500"><X size={20} /></button>
+                                <h2 className="text-3xl font-extrabold text-slate-900 mb-4">Assignment Submitted!</h2>
+                                <p className="text-slate-500 mb-8 text-lg">
+                                    You have successfully submitted this assignment.<br />
+                                    Your instructor will review it shortly.
+                                </p>
+                                <div className="bg-green-50 border border-green-200 rounded-xl p-4 w-full flex items-center justify-center gap-2 text-green-800 font-bold">
+                                    <CheckCheck size={20} />
+                                    <span>Submission Recorded</span>
                                 </div>
-                            )}
-                        </div>
-                        <button onClick={handleAssignmentUpload} disabled={!assignmentFile || uploading} className="w-full py-4 bg-[#005EB8] hover:bg-[#004a94] text-white rounded-xl font-bold text-lg flex items-center justify-center gap-3 transition-all shadow-lg shadow-blue-200 active:scale-95 disabled:opacity-70 disabled:cursor-not-allowed">
-                            {uploading ? "Uploading to Drive..." : "Submit Assignment"} {!uploading && <CheckCircle size={20} />}
-                        </button>
+                            </div>
+                        ) : (
+                            <>
+                                <div className="w-20 h-20 bg-blue-50 rounded-full flex items-center justify-center mx-auto mb-6"><UploadCloud size={40} className="text-[#005EB8]" /></div>
+                                <h2 className="text-2xl font-bold text-slate-800 mb-2">{activeLesson.title}</h2>
+                                {activeLesson.is_mandatory && (<span className="inline-block bg-red-100 text-red-600 text-xs font-bold px-3 py-1 rounded-full mb-4">MANDATORY SUBMISSION</span>)}
+                                <p className="text-slate-600 mb-8 leading-relaxed whitespace-pre-wrap text-sm">{activeLesson.instructions || activeLesson.description || "Upload your assignment below."}</p>
+                                <div className="mb-8">
+                                    {!assignmentFile ? (
+                                        <div className="border-2 border-dashed border-slate-300 rounded-xl p-8 bg-slate-50 hover:bg-slate-100 transition-all cursor-pointer relative group">
+                                            <input type="file" className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10" onChange={(e) => setAssignmentFile(e.target.files?.[0] || null)} accept=".pdf,.doc,.docx,.zip" />
+                                            <div className="flex flex-col items-center gap-3 group-hover:scale-105 transition-transform"><UploadCloud size={32} className="text-slate-400 group-hover:text-[#005EB8]" /><div><p className="text-slate-700 font-bold text-sm">Click to upload or drag and drop</p><p className="text-slate-400 text-xs mt-1">Maximum file size 10MB</p></div></div>
+                                        </div>
+                                    ) : (
+                                        <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 flex items-center justify-between">
+                                            <div className="flex items-center gap-4"><div className="bg-white p-2 rounded-lg border border-blue-100 text-[#005EB8]"><FileIcon size={24} /></div><div className="text-left"><p className="text-slate-800 font-bold text-sm truncate max-w-[200px]">{assignmentFile.name}</p><p className="text-slate-500 text-xs">{(assignmentFile.size / 1024 / 1024).toFixed(2)} MB</p></div></div>
+                                            <button onClick={() => setAssignmentFile(null)} className="p-2 hover:bg-white rounded-full transition-colors text-slate-400 hover:text-red-500"><X size={20} /></button>
+                                        </div>
+                                    )}
+                                </div>
+                                <button onClick={handleAssignmentUpload} disabled={!assignmentFile || uploading} className="w-full py-4 bg-[#005EB8] hover:bg-[#004a94] text-white rounded-xl font-bold text-lg flex items-center justify-center gap-3 transition-all shadow-lg shadow-blue-200 active:scale-95 disabled:opacity-70 disabled:cursor-not-allowed">
+                                    {uploading ? "Uploading to Drive..." : "Submit Assignment"} {!uploading && <CheckCircle size={20} />}
+                                </button>
+                            </>
+                        )}
                     </div>
                 </div>
             );

@@ -4,6 +4,7 @@ import {
   LayoutDashboard, BookOpen, UserPlus, PlusCircle, LogOut, Bell,
   ChevronRight, Code, Menu, Settings, Users, FolderOpen, MessageSquare // ✅ Added FolderOpen Icon
 } from "lucide-react";
+import BrandLogo from "./components/BrandLogo";
 
 const DashboardLayout = () => {
   const navigate = useNavigate();
@@ -55,9 +56,7 @@ const DashboardLayout = () => {
         <div className={`p-6 border-b border-slate-300 flex items-center gap-2 ${collapsed ? "lg:justify-center lg:px-2" : "justify-between"}`}>
           {(!collapsed || mobileMenuOpen) && (
             <div>
-              <h2 className="text-2xl font-extrabold text-[#1e293b] tracking-tighter m-0">
-                <span className="text-[#005EB8]">iQ</span>math
-              </h2>
+              <BrandLogo size="md" />
               <span className="text-[11px] text-[#87C232] font-bold uppercase tracking-widest block mt-1">
                 Instructor
               </span>
