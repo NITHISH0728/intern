@@ -2,9 +2,9 @@ import { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import axios from "axios";
 import { DragDropContext, Droppable, Draggable } from "@hello-pangea/dnd";
-import type { DropResult } from "@hello-pangea/dnd";import API_BASE_URL from './config';
-import { 
-  ArrowLeft, Trash2, Edit2, Video, FileText, 
+import type { DropResult } from "@hello-pangea/dnd"; import API_BASE_URL from './config';
+import {
+  ArrowLeft, Trash2, Edit2, Video, FileText,
   Code, HelpCircle, FileQuestion, ChevronDown, ChevronRight,
   CheckCircle, X, AlertTriangle, GripVertical, Radio, Zap,
   Check
@@ -45,15 +45,15 @@ const CoursePreview = () => {
   const [deleteConfirmId, setDeleteConfirmId] = useState<{ id: number; type: 'item' | 'module' } | null>(null);
 
   // Toast State
-  const [toast, setToast] = useState<{ show: boolean; message: string; type: "success" | "error" }>({ 
-    show: false, message: "", type: "success" 
+  const [toast, setToast] = useState<{ show: boolean; message: string; type: "success" | "error" }>({
+    show: false, message: "", type: "success"
   });
 
   // 🎨 PROFESSIONAL THEME
-  const brand = { 
-    blue: "#005EB8", 
-    green: "#87C232", 
-    textMain: "#1e293b", 
+  const brand = {
+    blue: "#005EB8",
+    green: "#87C232",
+    textMain: "#1e293b",
     textLight: "#64748b",
     cardBg: "#F8FAFC",
     border: "#cbd5e1"
@@ -70,17 +70,17 @@ const CoursePreview = () => {
     try {
       const token = localStorage.getItem("token");
       const res = await axios.get(`${API_BASE_URL}/courses/${courseId}/player`, {
-         headers: { Authorization: `Bearer ${token}` }
+        headers: { Authorization: `Bearer ${token}` }
       });
       setCourse(res.data);
-      
+
       // Initialize modules state for DnD, sorting items by order
       const sortedModules = res.data.modules.map((m: any) => ({
-          ...m,
-          lessons: m.lessons.sort((a: any, b: any) => a.order - b.order)
+        ...m,
+        lessons: m.lessons.sort((a: any, b: any) => a.order - b.order)
       }));
       setModules(sortedModules);
-      
+
       // Auto-expand all modules initially
       setExpandedModules(res.data.modules.map((m: any) => m.id));
     } catch (err) { console.error("Error loading preview", err); } finally { setLoading(false); }
@@ -89,22 +89,22 @@ const CoursePreview = () => {
   // --- ITEM ACTIONS ---
   const handleDeleteItem = async (itemId: number) => {
     if (deleteConfirmId?.id !== itemId || deleteConfirmId?.type !== 'item') {
-        setDeleteConfirmId({ id: itemId, type: 'item' });
-        setTimeout(() => setDeleteConfirmId(null), 3000);
-        return;
+      setDeleteConfirmId({ id: itemId, type: 'item' });
+      setTimeout(() => setDeleteConfirmId(null), 3000);
+      return;
     }
 
     try {
       const token = localStorage.getItem("token");
       await axios.delete(`${API_BASE_URL}/content/${itemId}`, { headers: { Authorization: `Bearer ${token}` } });
-      
+
       // Update local state instead of refetching for speed
       const updatedModules = modules.map(m => ({
-          ...m,
-          lessons: m.lessons.filter(l => l.id !== itemId)
+        ...m,
+        lessons: m.lessons.filter(l => l.id !== itemId)
       }));
       setModules(updatedModules);
-      
+
       setDeleteConfirmId(null);
       triggerToast("Item deleted successfully", "success");
     } catch (err) { triggerToast("Failed to delete item.", "error"); }
@@ -116,53 +116,53 @@ const CoursePreview = () => {
     try {
       const token = localStorage.getItem("token");
       await axios.patch(`${API_BASE_URL}/content/${editingItem.id}`, { title: editTitle, url: editUrl }, { headers: { Authorization: `Bearer ${token}` } });
-      
+
       // Update local state
       const updatedModules = modules.map(m => ({
-          ...m,
-          lessons: m.lessons.map(l => l.id === editingItem.id ? { ...l, title: editTitle, url: editUrl } : l)
+        ...m,
+        lessons: m.lessons.map(l => l.id === editingItem.id ? { ...l, title: editTitle, url: editUrl } : l)
       }));
       setModules(updatedModules);
-      
-      setEditingItem(null); 
+
+      setEditingItem(null);
       triggerToast("Item updated successfully", "success");
     } catch (err) { triggerToast("Failed to update item.", "error"); }
   };
 
   // --- MODULE ACTIONS (NEW) ---
   const handleEditModuleStart = (module: any, e: React.MouseEvent) => {
-      e.stopPropagation(); // Prevent toggling accordion
-      setEditingModuleId(module.id);
-      setEditModuleTitle(module.title);
+    e.stopPropagation(); // Prevent toggling accordion
+    setEditingModuleId(module.id);
+    setEditModuleTitle(module.title);
   };
 
   const handleEditModuleSave = async () => {
-      if (!editingModuleId) return;
-      try {
-          const token = localStorage.getItem("token");
-          await axios.patch(`${API_BASE_URL}/modules/${editingModuleId}`, { title: editModuleTitle }, { headers: { Authorization: `Bearer ${token}` } });
-          
-          setModules(modules.map(m => m.id === editingModuleId ? { ...m, title: editModuleTitle } : m));
-          setEditingModuleId(null);
-          triggerToast("Module renamed!", "success");
-      } catch (err) { triggerToast("Failed to rename module", "error"); }
+    if (!editingModuleId) return;
+    try {
+      const token = localStorage.getItem("token");
+      await axios.patch(`${API_BASE_URL}/modules/${editingModuleId}`, { title: editModuleTitle }, { headers: { Authorization: `Bearer ${token}` } });
+
+      setModules(modules.map(m => m.id === editingModuleId ? { ...m, title: editModuleTitle } : m));
+      setEditingModuleId(null);
+      triggerToast("Module renamed!", "success");
+    } catch (err) { triggerToast("Failed to rename module", "error"); }
   };
 
   const handleDeleteModule = async (moduleId: number, e: React.MouseEvent) => {
-      e.stopPropagation();
-      if (deleteConfirmId?.id !== moduleId || deleteConfirmId?.type !== 'module') {
-        setDeleteConfirmId({ id: moduleId, type: 'module' });
-        setTimeout(() => setDeleteConfirmId(null), 3000);
-        return;
-      }
+    e.stopPropagation();
+    if (deleteConfirmId?.id !== moduleId || deleteConfirmId?.type !== 'module') {
+      setDeleteConfirmId({ id: moduleId, type: 'module' });
+      setTimeout(() => setDeleteConfirmId(null), 3000);
+      return;
+    }
 
-      try {
-          const token = localStorage.getItem("token");
-          await axios.delete(`${API_BASE_URL}/modules/${moduleId}`, { headers: { Authorization: `Bearer ${token}` } });
-          setModules(modules.filter(m => m.id !== moduleId));
-          setDeleteConfirmId(null);
-          triggerToast("Module and its content deleted.", "success");
-      } catch (err) { triggerToast("Failed to delete module", "error"); }
+    try {
+      const token = localStorage.getItem("token");
+      await axios.delete(`${API_BASE_URL}/modules/${moduleId}`, { headers: { Authorization: `Bearer ${token}` } });
+      setModules(modules.filter(m => m.id !== moduleId));
+      setDeleteConfirmId(null);
+      triggerToast("Module and its content deleted.", "success");
+    } catch (err) { triggerToast("Failed to delete module", "error"); }
   };
 
 
@@ -176,7 +176,7 @@ const CoursePreview = () => {
 
     const moduleIndex = modules.findIndex(m => m.id.toString() === source.droppableId);
     const newLessons = Array.from(modules[moduleIndex].lessons);
-    
+
     // Reorder locally
     const [reorderedItem] = newLessons.splice(source.index, 1);
     newLessons.splice(destination.index, 0, reorderedItem);
@@ -188,15 +188,15 @@ const CoursePreview = () => {
 
     // Save to Backend
     try {
-        const token = localStorage.getItem("token");
-        const itemIds = newLessons.map(i => i.id);
-        await axios.put(
-            `${API_BASE_URL}/modules/${modules[moduleIndex].id}/reorder`, 
-            { item_ids: itemIds },
-            { headers: { Authorization: `Bearer ${token}` } }
-        );
+      const token = localStorage.getItem("token");
+      const itemIds = newLessons.map(i => i.id);
+      await axios.put(
+        `${API_BASE_URL}/modules/${modules[moduleIndex].id}/reorder`,
+        { item_ids: itemIds },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
     } catch (err) {
-        triggerToast("Failed to save new order", "error");
+      triggerToast("Failed to save new order", "error");
     }
   };
 
@@ -218,139 +218,136 @@ const CoursePreview = () => {
   if (!course) return <div style={{ padding: "40px", color: brand.textLight }}>Course not found.</div>;
 
   return (
-    <div style={{ padding: "40px", maxWidth: "1000px", margin: "0 auto", position: "relative" }}>
+    <div className="p-5 md:p-10 max-w-5xl mx-auto relative min-h-screen bg-[#F8FAFC]">
       {/* HEADER */}
-      <div style={{ marginBottom: "30px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: "15px" }}>
-          <button onClick={() => navigate(`/dashboard/course/${courseId}/builder`)} style={{ background: "white", border: `1px solid ${brand.border}`, borderRadius: "50%", padding: "8px", cursor: "pointer", color: brand.textMain }}>
+      <div className="mb-8 flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-200 pb-6">
+        <div className="flex items-center gap-4">
+          <button
+            onClick={() => navigate(`/dashboard/course/${courseId}/builder`)}
+            className="bg-white border border-slate-300 rounded-full p-2.5 text-slate-700 hover:bg-slate-50 transition-all hover:shadow-md cursor-pointer"
+          >
             <ArrowLeft size={20} />
           </button>
-          <div>
-             <h1 style={{ fontSize: "24px", margin: 0, color: brand.textMain, fontWeight: "800" }}>{course.title}</h1>
-             <p style={{ color: brand.textLight, margin: "5px 0 0 0", fontSize: "14px" }}>Content Manager & Preview</p>
+          <div className="flex flex-col">
+            <h1 className="text-2xl md:text-3xl font-extrabold text-[#0f172a] tracking-tight">{course.title}</h1>
+            <p className="text-slate-500 text-sm font-semibold flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-green-500"></span>
+              Content Manager & Preview
+            </p>
           </div>
         </div>
-        <div style={{ background: "#e0f2fe", color: "#005EB8", padding: "8px 16px", borderRadius: "20px", fontWeight: "700", fontSize: "12px", letterSpacing: "0.5px", textTransform: "uppercase" }}>
+        <div className="bg-[#e0f2fe] text-[#005EB8] px-4 py-1.5 rounded-full font-bold text-xs tracking-wider uppercase border border-blue-200 shadow-sm self-start md:self-auto">
           Instructor View
         </div>
       </div>
 
       {/* MODULES LIST WITH DRAG AND DROP */}
       <DragDropContext onDragEnd={onDragEnd}>
-      <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
-        {modules.map((module) => (
-          <div key={module.id} style={{ border: `1px solid ${brand.border}`, borderRadius: "12px", background: brand.cardBg, overflow: "hidden", boxShadow: "0 2px 4px rgba(0,0,0,0.02)" }}>
-            
-            {/* Module Header (With Edit/Delete) */}
-            <div 
-              onClick={() => toggleModule(module.id)}
-              style={{ padding: "16px 20px", background: "#F1F5F9", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "space-between", borderBottom: expandedModules.includes(module.id) ? `1px solid ${brand.border}` : "none" }}
-            >
-              <div style={{ display: "flex", alignItems: "center", gap: "10px", flex: 1 }}>
-                  {editingModuleId === module.id ? (
-                      <div onClick={e => e.stopPropagation()} style={{display: "flex", gap: "8px", flex: 1}}>
-                          <input 
-                              value={editModuleTitle} 
-                              onChange={e => setEditModuleTitle(e.target.value)}
-                              style={{ flex: 1, padding: "8px", borderRadius: "6px", border: `1px solid ${brand.blue}`, outline: "none", fontSize: "14px", fontWeight: "700" }}
-                              autoFocus
-                          />
-                          <button onClick={handleEditModuleSave} style={{ background: brand.green, border: "none", borderRadius: "6px", padding: "6px", color: "white", cursor: "pointer" }}><Check size={16} /></button>
-                          <button onClick={() => setEditingModuleId(null)} style={{ background: "#ef4444", border: "none", borderRadius: "6px", padding: "6px", color: "white", cursor: "pointer" }}><X size={16} /></button>
-                      </div>
-                  ) : (
-                      <>
-                        <h3 style={{ margin: 0, fontSize: "16px", fontWeight: "700", color: brand.textMain }}>{module.title}</h3>
-                        <div style={{display: "flex", gap: "5px", marginLeft: "10px"}}>
-                            <button onClick={(e) => handleEditModuleStart(module, e)} style={{ border: "none", background: "none", cursor: "pointer", color: brand.textLight }}><Edit2 size={14} /></button>
-                            <button onClick={(e) => handleDeleteModule(module.id, e)} style={{ border: "none", background: "none", cursor: "pointer", color: deleteConfirmId?.id === module.id && deleteConfirmId.type === 'module' ? "red" : brand.textLight }}>
-                                {deleteConfirmId?.id === module.id && deleteConfirmId.type === 'module' ? "Confirm?" : <Trash2 size={14} />}
-                            </button>
-                        </div>
-                      </>
-                  )}
-              </div>
-              {expandedModules.includes(module.id) ? <ChevronDown size={20} color={brand.textLight} /> : <ChevronRight size={20} color={brand.textLight} />}
-            </div>
+        <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
+          {modules.map((module) => (
+            <div key={module.id} className="border border-slate-200 rounded-xl bg-white overflow-hidden shadow-sm hover:shadow-md transition-shadow">
 
-            {/* Lessons List (Draggable) */}
-            {expandedModules.includes(module.id) && (
-              <Droppable droppableId={module.id.toString()}>
-              {(provided) => (
-                  <div 
-                    ref={provided.innerRef} 
-                    {...provided.droppableProps}
-                    style={{ padding: "10px" }}
-                  >
-                    {module.lessons.length === 0 ? (
-                      <div style={{ padding: "20px", textAlign: "center", color: brand.textLight, fontSize: "14px", fontStyle: "italic" }}>No content yet. Drag items here later.</div>
-                    ) : (
-                      module.lessons.map((lesson, index) => (
-                        <Draggable key={lesson.id} draggableId={lesson.id.toString()} index={index}>
-                          {(provided, snapshot) => (
-                            <div
+              {/* Module Header (With Edit/Delete) */}
+              <div
+                onClick={() => toggleModule(module.id)}
+                className={`p-4 md:p-5 cursor-pointer flex items-center justify-between transition-colors ${expandedModules.includes(module.id) ? "bg-slate-50 border-b border-slate-200" : "bg-white hover:bg-slate-50"}`}
+              >
+                <div className="flex items-center gap-3 md:gap-4 flex-1 overflow-hidden">
+                  {editingModuleId === module.id ? (
+                    <div onClick={e => e.stopPropagation()} className="flex items-center gap-2 flex-1 max-w-md">
+                      <input
+                        value={editModuleTitle}
+                        onChange={e => setEditModuleTitle(e.target.value)}
+                        className="flex-1 p-2 rounded-lg border border-[#005EB8] outline-none text-sm font-bold shadow-sm"
+                        autoFocus
+                      />
+                      <button onClick={handleEditModuleSave} className="bg-[#87C232] border-none rounded-lg p-2 text-white hover:bg-[#76a928] transition-colors"><Check size={16} /></button>
+                      <button onClick={() => setEditingModuleId(null)} className="bg-red-500 border-none rounded-lg p-2 text-white hover:bg-red-600 transition-colors"><X size={16} /></button>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-3 overflow-hidden">
+                      <h3 className="text-base md:text-lg font-bold text-[#1e293b] truncate">{module.title}</h3>
+                      <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <button onClick={(e) => handleEditModuleStart(module, e)} className="p-1.5 text-slate-400 hover:text-[#005EB8] hover:bg-blue-50 rounded-md transition-colors"><Edit2 size={14} /></button>
+                        <button
+                          onClick={(e) => handleDeleteModule(module.id, e)}
+                          className={`p-1.5 rounded-md transition-colors flex items-center gap-1 ${deleteConfirmId?.id === module.id && deleteConfirmId.type === 'module' ? "text-red-600 bg-red-50 font-bold text-xs" : "text-slate-400 hover:text-red-500 hover:bg-red-50"}`}
+                        >
+                          {deleteConfirmId?.id === module.id && deleteConfirmId.type === 'module' ? "Confirm?" : <Trash2 size={14} />}
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+                {expandedModules.includes(module.id) ? <ChevronDown size={20} className="text-slate-400" /> : <ChevronRight size={20} className="text-slate-400" />}
+              </div>
+
+              {/* Lessons List (Draggable) */}
+              {expandedModules.includes(module.id) && (
+                <Droppable droppableId={module.id.toString()}>
+                  {(provided) => (
+                    <div
+                      ref={provided.innerRef}
+                      {...provided.droppableProps}
+                      style={{ padding: "10px" }}
+                    >
+                      {module.lessons.length === 0 ? (
+                        <div style={{ padding: "20px", textAlign: "center", color: brand.textLight, fontSize: "14px", fontStyle: "italic" }}>No content yet. Drag items here later.</div>
+                      ) : (
+                        module.lessons.map((lesson, index) => (
+                          <Draggable key={lesson.id} draggableId={lesson.id.toString()} index={index}>
+                            {(provided, snapshot) => (
+                              <div
                                 ref={provided.innerRef}
                                 {...provided.draggableProps}
-                                style={{ 
-                                    display: "flex", alignItems: "center", justifyContent: "space-between", 
-                                    padding: "12px", borderBottom: "1px solid #f1f5f9", 
-                                    background: snapshot.isDragging ? "#e0f2fe" : "white", 
-                                    borderRadius: "8px", marginBottom: "8px",
-                                    ...provided.draggableProps.style 
-                                }}
-                            >
-                              <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
-                                {/* Drag Handle */}
-                                <div {...provided.dragHandleProps} style={{ cursor: "grab", color: "#cbd5e1", display: "flex", alignItems: "center" }}>
+                                className={`flex items-center justify-between p-3 md:p-4 border-b border-slate-100 last:border-none rounded-lg mb-2 transition-all ${snapshot.isDragging ? "bg-blue-50 shadow-md ring-2 ring-blue-200" : "bg-white hover:bg-slate-50"}`}
+                                style={provided.draggableProps.style}
+                              >
+                                <div className="flex items-center gap-3 md:gap-4 flex-1 min-w-0">
+                                  {/* Drag Handle */}
+                                  <div {...provided.dragHandleProps} className="cursor-grab text-slate-300 hover:text-slate-500 transition-colors">
                                     <GripVertical size={20} />
+                                  </div>
+
+                                  <div className="w-10 h-10 min-w-[40px] bg-slate-50 rounded-lg flex items-center justify-center border border-slate-200 shadow-sm">
+                                    {getIcon(lesson.type)}
+                                  </div>
+                                  <div className="flex-1 min-w-0">
+                                    <div className="font-bold text-sm md:text-base text-[#1e293b] truncate pr-2">{lesson.title}</div>
+                                    <div className="text-xs text-slate-500 flex items-center gap-1.5 truncate">
+                                      <span className="uppercase font-bold text-[10px] bg-slate-100 px-1.5 py-0.5 rounded text-slate-600">{lesson.type}</span>
+                                      <span className="w-1 h-1 bg-slate-300 rounded-full"></span>
+                                      <span className="truncate">{lesson.url || "No Link"}</span>
+                                    </div>
+                                  </div>
                                 </div>
 
-                                <div style={{ width: "36px", height: "36px", background: "#F8FAFC", borderRadius: "10px", display: "flex", alignItems: "center", justifyContent: "center", border: `1px solid ${brand.border}` }}>
-                                  {getIcon(lesson.type)}
-                                </div>
-                                <div>
-                                   <div style={{ fontWeight: "600", fontSize: "14px", color: brand.textMain }}>{lesson.title}</div>
-                                   <div style={{ fontSize: "12px", color: brand.textLight, maxWidth: "400px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                                     {lesson.type.toUpperCase()} • {lesson.url || "No Link"}
-                                   </div>
-                                </div>
-                              </div>
-
-                              <div style={{ display: "flex", gap: "8px" }}>
-                                  <button onClick={() => handleEditItemStart(lesson)} style={{ padding: "8px", border: `1px solid ${brand.border}`, borderRadius: "8px", background: "white", cursor: "pointer", color: brand.textLight, transition: "all 0.2s" }} title="Edit Details">
+                                <div className="flex items-center gap-2">
+                                  <button onClick={() => handleEditItemStart(lesson)} className="p-2 border border-slate-200 rounded-lg bg-white text-slate-400 hover:text-[#005EB8] hover:border-[#005EB8] hover:bg-blue-50 transition-all shadow-sm" title="Edit Details">
                                     <Edit2 size={16} />
                                   </button>
-                                  
-                                  <button 
-                                    onClick={() => handleDeleteItem(lesson.id)} 
-                                    style={{ 
-                                        padding: "8px 12px", 
-                                        border: deleteConfirmId?.id === lesson.id && deleteConfirmId.type === 'item' ? "1px solid #dc2626" : "1px solid #fee2e2", 
-                                        borderRadius: "8px", 
-                                        background: deleteConfirmId?.id === lesson.id && deleteConfirmId.type === 'item' ? "#dc2626" : "#fff1f2", 
-                                        cursor: "pointer", 
-                                        color: deleteConfirmId?.id === lesson.id && deleteConfirmId.type === 'item' ? "white" : "#ef4444", 
-                                        transition: "all 0.2s",
-                                        display: "flex", alignItems: "center", gap: "6px", fontSize: "12px", fontWeight: "bold"
-                                    }} 
+
+                                  <button
+                                    onClick={() => handleDeleteItem(lesson.id)}
+                                    className={`p-2 border rounded-lg transition-all shadow-sm flex items-center gap-1 ${deleteConfirmId?.id === lesson.id && deleteConfirmId.type === 'item' ? "bg-red-600 border-red-600 text-white px-3" : "bg-white border-red-100 text-red-400 hover:text-red-600 hover:bg-red-50 hover:border-red-200"}`}
                                     title="Delete Item"
                                   >
-                                    {deleteConfirmId?.id === lesson.id && deleteConfirmId.type === 'item' ? "Confirm?" : <Trash2 size={16} />}
+                                    {deleteConfirmId?.id === lesson.id && deleteConfirmId.type === 'item' ? <span className="text-xs font-bold whitespace-nowrap">Confirm?</span> : <Trash2 size={16} />}
                                   </button>
+                                </div>
                               </div>
-                            </div>
-                          )}
-                        </Draggable>
-                      ))
-                    )}
-                    {provided.placeholder}
-                  </div>
+                            )}
+                          </Draggable>
+                        ))
+                      )}
+                      {provided.placeholder}
+                    </div>
+                  )}
+                </Droppable>
               )}
-              </Droppable>
-            )}
-          </div>
-        ))}
-      </div>
+            </div>
+          ))}
+        </div>
       </DragDropContext>
 
       {/* EDIT ITEM MODAL */}
@@ -367,8 +364,8 @@ const CoursePreview = () => {
               <input value={editUrl} onChange={e => setEditUrl(e.target.value)} style={{ width: "100%", padding: "10px", borderRadius: "8px", border: `1px solid ${brand.border}`, outline: "none", color: brand.textMain }} />
             </div>
             <div style={{ display: "flex", gap: "10px" }}>
-               <button onClick={handleEditItemSave} style={{ flex: 1, padding: "10px", background: brand.blue, color: "white", border: "none", borderRadius: "8px", fontWeight: "700", cursor: "pointer" }}>Save Changes</button>
-               <button onClick={() => setEditingItem(null)} style={{ flex: 1, padding: "10px", background: "white", color: brand.textLight, border: `1px solid ${brand.border}`, borderRadius: "8px", fontWeight: "700", cursor: "pointer" }}>Cancel</button>
+              <button onClick={handleEditItemSave} style={{ flex: 1, padding: "10px", background: brand.blue, color: "white", border: "none", borderRadius: "8px", fontWeight: "700", cursor: "pointer" }}>Save Changes</button>
+              <button onClick={() => setEditingItem(null)} style={{ flex: 1, padding: "10px", background: "white", color: brand.textLight, border: `1px solid ${brand.border}`, borderRadius: "8px", fontWeight: "700", cursor: "pointer" }}>Cancel</button>
             </div>
           </div>
         </div>
@@ -382,15 +379,15 @@ const CoursePreview = () => {
           boxShadow: "0 10px 30px -5px rgba(0,0,0,0.15)", borderLeft: `6px solid ${toast.type === "success" ? brand.green : "#ef4444"}`,
           display: "flex", alignItems: "center", gap: "12px", animation: "slideIn 0.3s ease-out"
         }}>
-           {toast.type === "success" ? <CheckCircle size={24} color={brand.green} /> : <AlertTriangle size={24} color="#ef4444" />}
-           <div>
-             <h4 style={{ margin: "0 0 4px 0", fontSize: "14px", fontWeight: "700", color: brand.textMain }}>{toast.type === "success" ? "Success" : "Error"}</h4>
-             <p style={{ margin: 0, fontSize: "13px", color: brand.textLight }}>{toast.message}</p>
-           </div>
-           <button onClick={() => setToast(prev => ({ ...prev, show: false }))} style={{ background: "none", border: "none", cursor: "pointer", marginLeft: "10px" }}>
-             <X size={16} color="#94a3b8" />
-           </button>
-           <style>{`@keyframes slideIn { from { opacity: 0; transform: translateX(20px); } to { opacity: 1; transform: translateX(0); } }`}</style>
+          {toast.type === "success" ? <CheckCircle size={24} color={brand.green} /> : <AlertTriangle size={24} color="#ef4444" />}
+          <div>
+            <h4 style={{ margin: "0 0 4px 0", fontSize: "14px", fontWeight: "700", color: brand.textMain }}>{toast.type === "success" ? "Success" : "Error"}</h4>
+            <p style={{ margin: 0, fontSize: "13px", color: brand.textLight }}>{toast.message}</p>
+          </div>
+          <button onClick={() => setToast(prev => ({ ...prev, show: false }))} style={{ background: "none", border: "none", cursor: "pointer", marginLeft: "10px" }}>
+            <X size={16} color="#94a3b8" />
+          </button>
+          <style>{`@keyframes slideIn { from { opacity: 0; transform: translateX(20px); } to { opacity: 1; transform: translateX(0); } }`}</style>
         </div>
       )}
     </div>

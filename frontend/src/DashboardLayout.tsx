@@ -1,37 +1,19 @@
-import { useState } from "react"; 
+import { useState } from "react";
 import { Outlet, useNavigate, useLocation } from "react-router-dom";
-import { 
-  LayoutDashboard, BookOpen, UserPlus, PlusCircle, LogOut, Bell, 
+import {
+  LayoutDashboard, BookOpen, UserPlus, PlusCircle, LogOut, Bell,
   ChevronRight, Code, Menu, Settings, Users, FolderOpen, MessageSquare // ✅ Added FolderOpen Icon
-} from "lucide-react"; 
+} from "lucide-react";
 
 const DashboardLayout = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const [collapsed, setCollapsed] = useState(false);
-  
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+
   // ✅ Profile Dropdown State
   const [showProfileMenu, setShowProfileMenu] = useState(false);
   const instructorData = { name: "Instructor", email: "instructor@iqmath.com" };
-
-  // 🎨 UPDATED BRAND PALETTE (Subtle Light Professional Theme)
-  const brand = {
-    iqBlue: "#005EB8",       // Logo Blue (Identity)
-    iqGreen: "#87C232",      // Logo Green (Identity)
-    
-    // UI Colors - UPDATED
-    mainBg: "#E2E8F0",       // ✅ Lighter Slate Background instead of dark gray
-    sidebarBg: "#F8FAFC",    // ✅ Very very light gray (off-white) for sidebar
-    cardBg: "#F8FAFC",       // ✅ Very very light gray (off-white) for content cards
-    
-    // Text Colors
-    textMain: "#1e293b",     // Dark Slate (Professional Text)
-    textLight: "#64748b",    // Muted Slate (Subtle Text)
-    
-    // Borders & Accents
-    border: "#cbd5e1",       // Slightly darker border for definition
-    danger: "#ef4444"
-  };
 
   const menuItems = [
     { label: "Home", path: "/dashboard", icon: <LayoutDashboard size={20} /> },
@@ -41,7 +23,7 @@ const DashboardLayout = () => {
     { label: "Add Admits", path: "/dashboard/add-admits", icon: <UserPlus size={20} /> },
     { label: "Students", path: "/dashboard/students", icon: <Users size={20} /> },
     // ✅ NEW: Assignment Verification Link
-    { label: "Verification", path: "/dashboard/assignments", icon: <FolderOpen size={20} /> }, 
+    { label: "Verification", path: "/dashboard/assignments", icon: <FolderOpen size={20} /> },
     { label: "Messages", path: "/dashboard/messages", icon: <MessageSquare size={20} /> },
   ];
 
@@ -51,131 +33,138 @@ const DashboardLayout = () => {
   };
 
   return (
-    <div style={{ display: "flex", height: "100vh", background: brand.mainBg, fontFamily: "'Inter', sans-serif" }}>
-      
-      {/* SIDEBAR: Floating Effect on Subtle Gray */}
-      <aside style={{ 
-        width: collapsed ? "80px" : "280px", 
-        background: brand.sidebarBg, 
-        borderRight: `1px solid ${brand.border}`, 
-        display: "flex", flexDirection: "column", 
-        position: "relative", zIndex: 10, 
-        boxShadow: "4px 0 24px rgba(0,0,0,0.04)", 
-        transition: "width 0.3s ease" 
-      }}>
-        
+    <div className="flex h-screen bg-slate-200 font-sans">
+
+      {/* MOBILE OVERLAY */}
+      {mobileMenuOpen && (
+        <div
+          className="fixed inset-0 z-40 bg-black/50 lg:hidden"
+          onClick={() => setMobileMenuOpen(false)}
+        />
+      )}
+
+      {/* SIDEBAR */}
+      <aside
+        className={`fixed inset-y-0 left-0 z-50 flex flex-col bg-slate-50 border-r border-slate-300 shadow-xl transition-all duration-300 lg:static lg:shadow-none
+            ${mobileMenuOpen ? "translate-x-0 w-72" : "-translate-x-full lg:translate-x-0"} 
+            ${collapsed ? "lg:w-20" : "lg:w-72"}
+        `}
+      >
+
         {/* LOGO SECTION */}
-        <div style={{ padding: collapsed ? "24px 0" : "32px 24px", borderBottom: `1px solid ${brand.border}`, display: "flex", flexDirection: collapsed ? "column" : "row", alignItems: "center", justifyContent: collapsed ? "center" : "space-between", gap: "10px" }}>
-          {!collapsed && (
+        <div className={`p-6 border-b border-slate-300 flex items-center gap-2 ${collapsed ? "lg:justify-center lg:px-2" : "justify-between"}`}>
+          {(!collapsed || mobileMenuOpen) && (
             <div>
-                {/* IDENTITY KEPT STRICTLY BLUE & GREEN */}
-                <h2 style={{ fontSize: "24px", fontWeight: "800", color: brand.textMain, letterSpacing: "-0.5px", margin: 0 }}>
-                  <span style={{ color: brand.iqBlue }}>iQ</span>math
-                </h2>
-                <span style={{ fontSize: "11px", color: brand.iqGreen, fontWeight: "700", textTransform: "uppercase", letterSpacing: "1.5px", marginTop: "4px", display: "block" }}>
-                  Instructor
-                </span>
+              <h2 className="text-2xl font-extrabold text-[#1e293b] tracking-tighter m-0">
+                <span className="text-[#005EB8]">iQ</span>math
+              </h2>
+              <span className="text-[11px] text-[#87C232] font-bold uppercase tracking-widest block mt-1">
+                Instructor
+              </span>
             </div>
           )}
-          <button onClick={() => setCollapsed(!collapsed)} style={{ background: "transparent", border: "none", cursor: "pointer", color: brand.textLight, padding: "8px", borderRadius: "8px", display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <button
+            onClick={() => setCollapsed(!collapsed)}
+            className="hidden lg:flex p-2 rounded-lg text-slate-500 hover:bg-slate-200 transition-colors"
+          >
+            <Menu size={24} />
+          </button>
+          {/* Mobile Close Button */}
+          <button
+            onClick={() => setMobileMenuOpen(false)}
+            className="lg:hidden p-2 rounded-lg text-slate-500 hover:bg-slate-200 transition-colors"
+          >
             <Menu size={24} />
           </button>
         </div>
 
         {/* NAVIGATION */}
-        <nav style={{ flex: 1, padding: "24px 12px", display: "flex", flexDirection: "column", gap: "8px", overflowY: "auto" }}>
+        <nav className="flex-1 overflow-y-auto p-3 space-y-2">
           {menuItems.map((item) => {
-            // Check if current path matches the item path
             const isActive = location.pathname === item.path || location.pathname === item.path + "/";
-            
+
             return (
-              <div 
-                key={item.path} 
-                onClick={() => navigate(item.path)} 
-                title={collapsed ? item.label : ""} 
-                style={{ 
-                  display: "flex", alignItems: "center", justifyContent: collapsed ? "center" : "space-between", 
-                  padding: "14px 16px", borderRadius: "10px", cursor: "pointer", 
-                  
-                  // Active state uses the new cardBg (off-white) and brand colors
-                  background: isActive ? brand.cardBg : "transparent",
-                  color: isActive ? brand.iqBlue : brand.textLight, 
-                  boxShadow: isActive ? "0 2px 5px rgba(0,0,0,0.05)" : "none",
-                  fontWeight: isActive ? "700" : "500", 
-                  transition: "all 0.2s ease-in-out" 
-                }}
-                // Inline hover effect simulation
-                onMouseOver={(e) => {
-                    if (!isActive) {
-                        e.currentTarget.style.background = "#f1f5f9"; // light slate hover
-                    }
-                }}
-                onMouseOut={(e) => {
-                    if (!isActive) {
-                        e.currentTarget.style.background = "transparent";
-                    }
-                }}
+              <div
+                key={item.path}
+                onClick={() => { navigate(item.path); setMobileMenuOpen(false); }}
+                title={collapsed ? item.label : ""}
+                className={`flex items-center p-3.5 rounded-xl cursor-pointer transition-all duration-200 group
+                    ${collapsed ? "justify-center" : "justify-between"}
+                    ${isActive ? "bg-slate-100 text-[#005EB8] shadow-sm font-bold" : "text-slate-500 hover:bg-slate-100 hover:text-slate-700 font-medium"}
+                `}
               >
-                <div style={{ display: "flex", alignItems: "center", gap: "14px" }}>
-                  {item.icon}
-                  {!collapsed && <span style={{ fontSize: "15px" }}>{item.label}</span>}
+                <div className="flex items-center gap-3.5">
+                  <div className={`transition-transform duration-200 ${isActive ? "scale-110" : "group-hover:scale-110"}`}>{item.icon}</div>
+                  {(!collapsed || mobileMenuOpen) && <span className="text-[15px]">{item.label}</span>}
                 </div>
-                {!collapsed && isActive && <ChevronRight size={16} color={brand.iqBlue} strokeWidth={2.5} />}
+                {(!collapsed || mobileMenuOpen) && isActive && <ChevronRight size={16} className="text-[#005EB8]" strokeWidth={3} />}
               </div>
             );
           })}
         </nav>
 
         {/* FOOTER */}
-        <div style={{ padding: "20px", borderTop: `1px solid ${brand.border}` }}>
-          <div onClick={handleLogout} style={{ display: "flex", alignItems: "center", justifyContent: collapsed ? "center" : "flex-start", gap: "12px", padding: "12px 16px", color: brand.textLight, cursor: "pointer", fontWeight: "600", borderRadius: "8px", transition: "background 0.2s" }} onMouseOver={(e) => {e.currentTarget.style.color = brand.danger; e.currentTarget.style.background = "#FEF2F2"}} onMouseOut={(e) => {e.currentTarget.style.color = brand.textLight; e.currentTarget.style.background = "transparent"}}>
-            <LogOut size={20} strokeWidth={1.5} /> {!collapsed && <span>Sign Out</span>}
+        <div className="p-5 border-t border-slate-300">
+          <div
+            onClick={handleLogout}
+            className={`flex items-center gap-3 p-3 text-slate-500 cursor-pointer font-semibold rounded-lg transition-colors hover:bg-red-50 hover:text-red-500
+                ${collapsed ? "justify-center" : "justify-start"}
+            `}
+          >
+            <LogOut size={20} strokeWidth={2} /> {(!collapsed || mobileMenuOpen) && <span>Sign Out</span>}
           </div>
         </div>
       </aside>
 
       {/* MAIN CONTENT AREA */}
-      <main style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
-        
+      <main className="flex-1 flex flex-col h-full overflow-hidden relative w-full">
+
         {/* HEADER */}
-        <header style={{ 
-          height: "80px", 
-          background: brand.sidebarBg, // Matches sidebar (off-white)
-          borderBottom: `1px solid ${brand.border}`, 
-          display: "flex", alignItems: "center", justifyContent: "space-between", 
-          padding: "0 40px" 
-        }}>
-          <div>
-            <h1 style={{ fontSize: "22px", fontWeight: "700", color: brand.textMain }}>
+        <header className="h-20 bg-slate-50 border-b border-slate-300 flex items-center justify-between px-6 lg:px-10 shrink-0">
+          <div className="flex items-center gap-4">
+            <button onClick={() => setMobileMenuOpen(true)} className="lg:hidden p-2 -ml-2 text-slate-600">
+              <Menu size={24} />
+            </button>
+            <h1 className="text-xl lg:text-2xl font-bold text-[#1e293b]">
               {menuItems.find(i => i.path === location.pathname)?.label || "Dashboard"}
             </h1>
           </div>
 
-          <div style={{ display: "flex", alignItems: "center", gap: "20px" }}>
-            <button style={{ background: "transparent", border: "none", cursor: "pointer", padding: "8px", borderRadius: "50%" }}>
-              <Bell size={22} color={brand.textLight} strokeWidth={1.5} />
+          <div className="flex items-center gap-4 lg:gap-6">
+            <button className="p-2 rounded-full hover:bg-slate-200 transition-colors relative">
+              <Bell size={22} className="text-slate-500" strokeWidth={2} />
+              <span className="absolute top-2 right-2.5 w-2 h-2 bg-red-500 rounded-full border border-white"></span>
             </button>
-            
+
             {/* PROFILE DROPDOWN */}
-            <div style={{ position: "relative" }}>
-                <button onClick={() => setShowProfileMenu(!showProfileMenu)} style={{ width: "40px", height: "40px", borderRadius: "50%", background: brand.iqBlue, color: "white", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: "700", fontSize: "16px", boxShadow: "0 4px 10px rgba(0, 94, 184, 0.3)", border: "none", cursor: "pointer" }}>IN</button>
-                
-                {showProfileMenu && (
-                    <div style={{ position: "absolute", right: 0, top: "50px", width: "240px", background: brand.cardBg, borderRadius: "12px", boxShadow: "0 10px 25px -5px rgba(0, 0, 0, 0.1)", padding: "16px", zIndex: 100, border: `1px solid ${brand.border}` }}>
-                        <div style={{ marginBottom: "16px", borderBottom: `1px solid ${brand.border}`, paddingBottom: "16px" }}>
-                            <p style={{ fontWeight: "700", color: brand.textMain, margin: 0 }}>{instructorData.name}</p>
-                            <p style={{ fontSize: "12px", color: brand.textLight, margin: "4px 0 0 0" }}>{instructorData.email}</p>
-                        </div>
-                        <button onClick={() => { navigate("/dashboard/settings"); setShowProfileMenu(false); }} style={{ display: "flex", alignItems: "center", gap: "10px", width: "100%", padding: "10px", borderRadius: "8px", border: "none", background: "transparent", color: brand.textMain, cursor: "pointer", textAlign: "left", fontSize: "14px", fontWeight: "500" }} onMouseOver={(e) => e.currentTarget.style.background = brand.mainBg} onMouseOut={(e) => e.currentTarget.style.background = "transparent"}><Settings size={18} /> Settings</button>
-                        <button onClick={handleLogout} style={{ display: "flex", alignItems: "center", gap: "10px", width: "100%", padding: "10px", borderRadius: "8px", border: "none", background: "transparent", color: brand.danger, cursor: "pointer", textAlign: "left", fontSize: "14px", fontWeight: "600", marginTop: "4px" }} onMouseOver={(e) => e.currentTarget.style.background = "#fef2f2"} onMouseOut={(e) => e.currentTarget.style.background = "transparent"}><LogOut size={18} /> Logout</button>
-                    </div>
-                )}
+            <div className="relative">
+              <button
+                onClick={() => setShowProfileMenu(!showProfileMenu)}
+                className="w-10 h-10 rounded-full bg-[#005EB8] text-white flex items-center justify-center font-bold text-base shadow-lg shadow-blue-200/50 hover:scale-105 transition-transform"
+              >
+                IN
+              </button>
+
+              {showProfileMenu && (
+                <div className="absolute right-0 top-14 w-64 bg-slate-50 rounded-xl shadow-2xl p-4 z-[100] border border-slate-200 animate-fade-in-up">
+                  <div className="mb-4 border-b border-slate-200 pb-4">
+                    <p className="font-bold text-[#1e293b]">{instructorData.name}</p>
+                    <p className="text-xs text-slate-500 mt-1">{instructorData.email}</p>
+                  </div>
+                  <button onClick={() => { navigate("/dashboard/settings"); setShowProfileMenu(false); }} className="flex items-center gap-3 w-full p-2.5 rounded-lg hover:bg-slate-100 text-[#1e293b] text-sm font-medium transition-colors text-left">
+                    <Settings size={18} /> Settings
+                  </button>
+                  <button onClick={handleLogout} className="flex items-center gap-3 w-full p-2.5 rounded-lg hover:bg-red-50 text-red-500 text-sm font-bold transition-colors text-left mt-1">
+                    <LogOut size={18} /> Logout
+                  </button>
+                </div>
+              )}
             </div>
           </div>
         </header>
 
-        {/* CONTENT (With new Lighter Gray Background) */}
-        <div style={{ flex: 1, padding: "40px", overflowY: "auto" }}>
+        {/* CONTENT */}
+        <div className="flex-1 p-4 lg:p-10 overflow-y-auto overflow-x-hidden bg-slate-200">
           <Outlet />
         </div>
       </main>

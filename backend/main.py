@@ -54,6 +54,7 @@ from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseUpload
 from sqlalchemy import text
+from token_manager import TokenManager
 
 
 
@@ -91,10 +92,19 @@ app = FastAPI(title="iQmath Pro - Military Grade API")
 limiter = Limiter(key_func=get_remote_address)
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
+# Initialize Auto-Refresh Service
+token_manager = TokenManager()
+
 # Run DB Init on Startup
 @app.on_event("startup")
 async def on_startup():
     await init_models()
+    token_manager.start()
+
+@app.on_event("shutdown")
+async def on_shutdown():
+    token_manager.stop()
 
 # 2. CONFIG: CORS POLICY (Restricted for Security in Prod)
 app.add_middleware(
@@ -354,7 +364,12 @@ def upload_file_to_drive(file_obj, filename, folder_link):
         if not creds or not creds.valid:
            if creds and creds.expired and creds.refresh_token:
                creds.refresh(GoogleRequest())
-        else: return None
+               # Save the refreshed token
+               with open('token.json', 'w') as token:
+                   token.write(creds.to_json())
+           else:
+               print("❌ Creds invalid and no refresh token")
+               return None
 
         service = build('drive', 'v3', credentials=creds)
         file_metadata = { 'name': filename, 'parents': [folder_id] }
