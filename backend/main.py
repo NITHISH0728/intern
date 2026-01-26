@@ -1039,8 +1039,13 @@ async def create_payment_order(data: dict = Body(...)):
     return order
 
 @app.post("/api/v1/submit-assignment")
-async def submit_assignment(file: UploadFile = File(...), lesson_title: str = Form(...), db: AsyncSession = Depends(get_db), current_user: models.User = Depends(get_current_user)):
-    res = await db.execute(select(models.ContentItem).where(models.ContentItem.title == lesson_title, models.ContentItem.type == "assignment"))
+async def submit_assignment(file: UploadFile = File(...), lesson_title: str = Form(...), lesson_id: int = Form(None), db: AsyncSession = Depends(get_db), current_user: models.User = Depends(get_current_user)):
+    if lesson_id:
+        res = await db.execute(select(models.ContentItem).where(models.ContentItem.id == lesson_id))
+    else:
+        # Fallback to legacy title matching (deprecated but kept for safety)
+        res = await db.execute(select(models.ContentItem).where(models.ContentItem.title == lesson_title, models.ContentItem.type == "assignment"))
+    
     assignment_data = res.scalars().first()
     
     content = await file.read()
@@ -1057,6 +1062,25 @@ async def submit_assignment(file: UploadFile = File(...), lesson_title: str = Fo
     os.makedirs("assignments_backup", exist_ok=True)
     with open(f"assignments_backup/{safe_filename}", "wb") as f: f.write(content)
     
+    # ✅ FIX: Record Submission in Database
+    if assignment_data:
+        # Check if already submitted to avoid duplicates? Maybe just add new one.
+        # For now, simplistic approach: append new submission.
+        new_sub = models.Submission(
+            user_id=current_user.id, 
+            content_item_id=assignment_data.id, 
+            drive_link=f"Uploaded: {safe_filename}", 
+            status="Submitted"
+        )
+        db.add(new_sub)
+
+        # Mark Progress
+        prog_res = await db.execute(select(models.LessonProgress).where(models.LessonProgress.user_id == current_user.id, models.LessonProgress.content_item_id == assignment_data.id))
+        if not prog_res.scalars().first():
+            db.add(models.LessonProgress(user_id=current_user.id, content_item_id=assignment_data.id, is_completed=True))
+        
+        await db.commit()
+
     return {"message": "Submitted", "drive_status": drive_status}
 
 @app.post("/api/v1/confirm-submission")
